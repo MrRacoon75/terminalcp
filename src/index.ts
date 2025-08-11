@@ -21,6 +21,13 @@ interface Process {
 
 const processes = new Map<string, Process>();
 
+// Helper to flush terminal writes
+async function flushTerminal(terminal: XtermTerminalType): Promise<void> {
+	return new Promise<void>((resolve) => {
+		terminal.write("", () => resolve());
+	});
+}
+
 const server = new Server(
 	{
 		name: "tuicp",
@@ -120,6 +127,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				rows: 24,
 				scrollback: 10000,
 				allowProposedApi: true,
+				convertEol: true, // Convert \n to \r\n
 			});
 
 			const proc = spawn(command, {
@@ -231,6 +239,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			}
 
 			// Otherwise return terminal buffer (processed output)
+			// IMPORTANT: Flush the terminal first to ensure all writes are processed
+			await flushTerminal(proc.terminal);
+
 			const buffer = proc.terminal.buffer.active;
 			const totalLines = buffer.length;
 			const startLine = lines ? Math.max(0, totalLines - lines) : 0;
