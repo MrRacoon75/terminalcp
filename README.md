@@ -6,17 +6,91 @@ MCP server for spawning and controlling background processes with virtual termin
 
 terminalcp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a pseudo-TTY with a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
 
-## Installation
+## Requirements
+- Node.js 18 or newer
+- VS Code, Cursor, Windsurf, Claude Desktop, Goose or any other MCP client
 
-Install globally:
+## Getting Started
+
+First, install the terminalcp MCP server with your client.
+
+**Standard config** works in most tools:
+
+```json
+{
+  "mcpServers": {
+    "terminalcp": {
+      "command": "npx",
+      "args": ["@mariozechner/terminalcp@latest"]
+    }
+  }
+}
+```
+
+<details>
+<summary>Claude Code</summary>
+
+Use the Claude Code CLI to add the terminalcp server:
+
+```bash
+claude mcp add terminalcp npx @mariozechner/terminalcp@latest
+```
+</details>
+
+<details>
+<summary>Claude Desktop</summary>
+
+Follow the MCP install [guide](https://modelcontextprotocol.io/quickstart/user), use the standard config above.
+
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name it "terminalcp", use `command` type with the command `npx @mariozechner/terminalcp@latest`.
+
+</details>
+
+<details>
+<summary>VS Code</summary>
+
+Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server), use the standard config above. You can also install using the VS Code CLI:
+
+```bash
+# For VS Code
+code --add-mcp '{"name":"terminalcp","command":"npx","args":["@mariozechner/terminalcp@latest"]}'
+```
+
+After installation, the terminalcp server will be available for use with your GitHub Copilot agent in VS Code.
+</details>
+
+<details>
+<summary>Windsurf</summary>
+
+Follow Windsurf MCP [documentation](https://docs.windsurf.com/windsurf/cascade/mcp). Use the standard config above.
+
+</details>
+
+<details>
+<summary>Other MCP Clients</summary>
+
+For other MCP clients, use the standard config above or install globally:
+
 ```bash
 npm install -g @mariozechner/terminalcp
 ```
 
-Or run directly with npx:
-```bash
-npx @mariozechner/terminalcp
+Then use this config:
+```json
+{
+  "mcpServers": {
+    "terminalcp": {
+      "command": "terminalcp"
+    }
+  }
+}
 ```
+</details>
 
 ## Real-world Examples
 
@@ -127,21 +201,6 @@ Send ANSI sequences like Ctrl+C:
 }
 ```
 **Returns**: Array of running processes with their IDs and commands
-
-### MCP Configuration
-
-Add to your MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "terminalcp": {
-      "command": "npx",
-      "args": ["@mariozechner/terminalcp"]
-    }
-  }
-}
-```
 
 ## Development
 
