@@ -29,22 +29,21 @@ Examples:
   Start dev server: {"action": "start", "command": "npm run dev", "cwd": "/path/to/project"}
   Start Claude: {"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"}
   Start Gemini: {"action": "start", "command": "gemini"}
-  Send prompt: {"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
-  Submit with Enter: {"action": "stdin", "id": "proc-123", "data": "\\r"}
+  Send prompt with auto-submit: {"action": "stdin", "id": "proc-123", "data": "Write a test for main.py", "submit": true}
+  Send without submit: {"action": "stdin", "id": "proc-123", "data": "partial input"}
+  Manual Enter key: {"action": "stdin", "id": "proc-123", "data": "\\r"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
   Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
   List processes: {"action": "list"}
 
-IMPORTANT for interactive CLIs (Claude, Gemini, Python, etc):
-  - Send text and Enter key SEPARATELY for proper submission
-  - Send text: {"action": "stdin", "id": "proc-123", "data": "say hello"}
-  - Then submit: {"action": "stdin", "id": "proc-123", "data": "\\r"}
-  - The \\r (carriage return) MUST be sent as a separate stdin call
-
+Interactive CLI usage:
+  - Use submit: true to automatically append Enter key (\\r) to your input
+  - Omit submit or set to false for manual control
+  
 Interactive examples:
-  Claude: start → stdin "say hello" → stdin "\\r" → stdout → stop
-  Python: start "python3 -i" → stdin "print('hi')" → stdin "\\r" → stdout
-  LLDB: start "lldb ./app" → stdin "run" → stdin "\\r" → stdout
+  Claude: start → stdin "say hello" with submit: true → stdout → stop
+  Python: start "python3 -i" → stdin "print('hi')" with submit: true → stdout
+  LLDB: start "lldb ./app" → stdin "run" with submit: true → stdout
 
 Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolute paths.`,
 			inputSchema: {
@@ -73,6 +72,10 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							data: {
 								type: "string",
 								description: "Data to send to stdin (required for 'stdin' action)",
+							},
+							submit: {
+								type: "boolean",
+								description: "Automatically append Enter key (\\r) to the input (optional, defaults to false)",
 							},
 							lines: {
 								type: "number",
@@ -160,12 +163,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		}
 
 		case "stdin": {
-			const { id, data } = args;
+			const { id, data, submit } = args;
 			if (!id || data === undefined) {
 				throw new Error("Missing required fields: id, data");
 			}
 
-			await processManager.sendInput(id, data);
+			const inputData = submit ? data + "\r" : data;
+			await processManager.sendInput(id, inputData);
 
 			return {
 				content: [

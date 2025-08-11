@@ -113,7 +113,10 @@ Then use this config:
 // Start in specific directory
 {"action": "start", "command": "gemini", "cwd": "/path/to/project"}
 
-// Send a prompt (MUST be two separate calls!)
+// Send a prompt with automatic Enter key
+{"action": "stdin", "id": "proc-123", "data": "Write a test for main.py", "submit": true}
+
+// Or manually control submission (two separate calls)
 {"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
 {"action": "stdin", "id": "proc-123", "data": "\r"}  // Submit with carriage return
 
@@ -127,23 +130,20 @@ Then use this config:
 ### Python REPL
 ```json
 {"action": "start", "command": "python3 -i"}
-{"action": "stdin", "id": "proc-456", "data": "import numpy as np"}
-{"action": "stdin", "id": "proc-456", "data": "\r"}
+{"action": "stdin", "id": "proc-456", "data": "import numpy as np", "submit": true}
 {"action": "stdout", "id": "proc-456"}
 ```
 
 ### LLDB Debugger
 ```json
 {"action": "start", "command": "lldb ./myapp"}
-{"action": "stdin", "id": "proc-789", "data": "break main"}
-{"action": "stdin", "id": "proc-789", "data": "\r"}
-{"action": "stdin", "id": "proc-789", "data": "run"}
-{"action": "stdin", "id": "proc-789", "data": "\r"}
+{"action": "stdin", "id": "proc-789", "data": "break main", "submit": true}
+{"action": "stdin", "id": "proc-789", "data": "run", "submit": true}
 ```
 
 ## Important Usage Notes
 
-- **Interactive CLIs**: Must send text and Enter (`\r`) as separate stdin calls - see examples above
+- **Interactive CLIs**: Use `"submit": true` to automatically append Enter key, or send `\r` separately for manual control
 - **Aliases don't work**: Use absolute paths (e.g., `/Users/username/.claude/local/claude`)
 - **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
 - **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
@@ -190,12 +190,16 @@ The terminal tool accepts a JSON object with different action types:
 {
   "action": "stdin",
   "id": "proc-abc123",
-  "data": "ls -la\n"
+  "data": "ls -la",
+  "submit": true  // Optional: automatically append Enter key (\r)
 }
 ```
 **Returns**: Confirmation of input sent
 
-For interactive CLIs, send text and Enter separately (see examples above).
+**Options**:
+- `submit`: (optional, boolean) When `true`, automatically appends Enter key (`\r`) to the input. Defaults to `false`.
+
+For interactive CLIs, use `submit: true` for convenience, or send text and Enter separately for manual control.
 
 Send ANSI sequences like Ctrl+C:
 ```json
