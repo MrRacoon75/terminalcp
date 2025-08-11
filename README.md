@@ -1,5 +1,7 @@
 # terminalcp
 
+https://github.com/user-attachments/assets/e19a83da-e446-4ccd-9028-9c1cc0e09a5e
+
 Let AI agents control interactive command-line tools like a human would.
 
 ## What it does
