@@ -23,21 +23,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 	tools: [
 		{
 			name: "terminal",
-			description: `Control background processes with virtual terminals.
+			description: `Control background processes with virtual terminals. IMPORTANT: Always clean up processes with "stop" action when done.
 
 Examples:
-  Start dev server: {"action": "start", "command": "npm run dev"}
-  Run debugger: {"action": "start", "command": "lldb ./myapp"}
-  Start Claude: {"action": "start", "command": "claude"}
+  Start dev server: {"action": "start", "command": "npm run dev", "cwd": "/path/to/project"}
+  Start Claude: {"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"}
+  Start Gemini: {"action": "start", "command": "gemini"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
   Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
-  Send command: {"action": "stdin", "id": "proc-abc123", "data": "break main\\n"}
   List processes: {"action": "list"}
 
+IMPORTANT for interactive CLIs (Claude, Gemini, Python, etc):
+  - Send text and Enter key SEPARATELY for proper submission
+  - Send text: {"action": "stdin", "id": "proc-123", "data": "say hello"}
+  - Then submit: {"action": "stdin", "id": "proc-123", "data": "\\r"}
+  - The \\r (carriage return) MUST be sent as a separate stdin call
+
 Interactive examples:
-  LLDB: start → stdin "run\\n" → stdin "bt\\n" → stdout
-  Claude: start → stdin "say hello\\n" → stdout
-  Python: start "python3 -i" → stdin "print('hi')\\n" → stdout`,
+  Claude: start → stdin "say hello" → stdin "\\r" → stdout → stop
+  Python: start "python3 -i" → stdin "print('hi')" → stdin "\\r" → stdout
+  LLDB: start "lldb ./app" → stdin "run" → stdin "\\r" → stdout
+
+Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolute paths.`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -52,6 +59,10 @@ Interactive examples:
 							command: {
 								type: "string",
 								description: "Command to execute (required for 'start' action)",
+							},
+							cwd: {
+								type: "string",
+								description: "Working directory for the process (optional for 'start' action)",
 							},
 							id: {
 								type: "string",
@@ -93,18 +104,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 	switch (action) {
 		case "start": {
-			const { command } = args;
+			const { command, cwd } = args;
 			if (!command) {
 				throw new Error("Missing required field: command");
 			}
 
-			const id = await processManager.start(command);
+			const id = await processManager.start(command, cwd);
 
 			return {
 				content: [
 					{
 						type: "text",
-						text: JSON.stringify({ id, command, status: "started" }, null, 2),
+						text: JSON.stringify({ id, command, status: "started", cwd: cwd || process.cwd() }, null, 2),
 					},
 				],
 			};

@@ -4,7 +4,7 @@ MCP server for spawning and controlling background processes with virtual termin
 
 ## What it solves
 
-tuicp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
+tuicp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a pseudo-TTY with a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
 
 ## Installation
 
@@ -18,9 +18,62 @@ Or run directly with npx:
 npx @mariozechner/tuicp
 ```
 
+## Real-world Examples
+
+### Interactive AI Agents (Claude, Gemini)
+```json
+// Start Claude (use absolute path - aliases don't work)
+{"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"}
+
+// Start in specific directory
+{"action": "start", "command": "gemini", "cwd": "/path/to/project"}
+
+// Send a prompt (MUST be two separate calls!)
+{"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
+{"action": "stdin", "id": "proc-123", "data": "\r"}  // Submit with carriage return
+
+// Get response
+{"action": "stdout", "id": "proc-123"}
+
+// Clean up when done
+{"action": "stop", "id": "proc-123"}
+```
+
+### Python REPL
+```json
+{"action": "start", "command": "python3 -i"}
+{"action": "stdin", "id": "proc-456", "data": "import numpy as np"}
+{"action": "stdin", "id": "proc-456", "data": "\r"}
+{"action": "stdout", "id": "proc-456"}
+```
+
+### LLDB Debugger
+```json
+{"action": "start", "command": "lldb ./myapp"}
+{"action": "stdin", "id": "proc-789", "data": "break main"}
+{"action": "stdin", "id": "proc-789", "data": "\r"}
+{"action": "stdin", "id": "proc-789", "data": "run"}
+{"action": "stdin", "id": "proc-789", "data": "\r"}
+```
+
+## Important Usage Notes
+
+### Interactive CLI Submission
+**CRITICAL**: For interactive CLIs, text input and Enter key must be sent as **separate** stdin calls:
+1. First send the text: `{"action": "stdin", "id": "proc-id", "data": "your command"}`
+2. Then send carriage return: `{"action": "stdin", "id": "proc-id", "data": "\r"}`
+
+This is required for proper input handling in applications like Claude, Gemini, Python REPL, etc.
+
+### Process Cleanup
+Always stop processes when done to free resources:
+```json
+{"action": "stop", "id": "proc-id"}
+```
+
 ## How it works
 
-tuicp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport exclusively and manages multiple background processes, each with its own virtual terminal powered by xterm.js headless.
+tuicp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes, each running in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
 
 ### Tool: `terminal`
 
@@ -30,10 +83,19 @@ The terminal tool accepts a JSON object with different action types:
 ```json
 {
   "action": "start",
-  "command": "npm run dev"
+  "command": "npm run dev",
+  "cwd": "/path/to/project"  // optional
 }
 ```
-**Returns**: Process ID (e.g., `"proc-abc123"`)
+**Returns**: Process ID, command, status, and working directory
+
+**Note**: Aliases don't work - use absolute paths for commands like Claude:
+```json
+{
+  "action": "start",
+  "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"
+}
+```
 
 #### Stop a process
 ```json
@@ -63,6 +125,14 @@ The terminal tool accepts a JSON object with different action types:
 }
 ```
 **Returns**: Confirmation of input sent
+
+**Important for interactive CLIs**: Send text and Enter separately:
+```json
+// First send the command text
+{"action": "stdin", "id": "proc-abc123", "data": "print('hello')"}
+// Then send carriage return to submit
+{"action": "stdin", "id": "proc-abc123", "data": "\r"}
+```
 
 Send ANSI sequences like Ctrl+C:
 ```json

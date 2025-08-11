@@ -25,7 +25,7 @@ export class ProcessManager {
 	/**
 	 * Start a new process with virtual terminal
 	 */
-	async start(command: string): Promise<string> {
+	async start(command: string, cwd?: string): Promise<string> {
 		const id = `proc-${crypto.randomBytes(6).toString("hex")}`;
 
 		const terminal = new Terminal({
@@ -41,7 +41,7 @@ export class ProcessManager {
 			name: "xterm-256color",
 			cols: 80,
 			rows: 24,
-			cwd: process.cwd(),
+			cwd: cwd || process.cwd(),
 			env: process.env as { [key: string]: string },
 		});
 
