@@ -19,11 +19,11 @@ async function testClaudeOutput() {
 		await sleep(2000);
 
 		const helpOutput = await manager.getFullOutput(helpId);
-		
+
 		console.log("\nTerminal Buffer Output (processed):");
 		console.log("  Length:", helpOutput.buffer.length);
 		console.log("  First 500 chars:", helpOutput.buffer.substring(0, 500));
-		
+
 		console.log("\nRaw Output (with ANSI):");
 		console.log("  Length:", helpOutput.raw.length);
 		console.log("  First 500 chars:", helpOutput.raw.substring(0, 500));
@@ -45,11 +45,11 @@ async function testClaudeOutput() {
 		console.log(`✓ Started interactive bash with ID: ${bashId}`);
 
 		await sleep(500);
-		
+
 		// Send input
 		await manager.sendInput(bashId, "Claude\n");
 		console.log("✓ Sent input: 'Claude'");
-		
+
 		await sleep(500);
 
 		const bashOutput = await manager.getFullOutput(bashId);
@@ -66,7 +66,7 @@ async function testClaudeOutput() {
 		// Send 'q' to quit less
 		await manager.sendInput(lessId, "q");
 		console.log("✓ Sent 'q' to quit less");
-		
+
 		await sleep(500);
 
 		const lessOutput = await manager.getFullOutput(lessId);
@@ -83,7 +83,7 @@ async function testClaudeOutput() {
 		const colorOutput = await manager.getFullOutput(colorId);
 		console.log("Buffer output (first 200 chars):", colorOutput.buffer.substring(0, 200));
 		console.log("Raw output (first 200 chars):", colorOutput.raw.substring(0, 200));
-		
+
 		// Check for ANSI codes in raw output
 		const hasAnsiCodes = colorOutput.raw.includes('\x1b[');
 		console.log("Raw output contains ANSI codes:", hasAnsiCodes);
@@ -96,7 +96,7 @@ async function testClaudeOutput() {
 		// Check output periodically
 		for (let i = 0; i < 3; i++) {
 			await sleep(600);
-			const output = await manager.getOutput(watchId, { raw: true });
+			const output = await manager.getOutput(watchId);
 			console.log(`  After ${(i+1)*0.6}s:`, JSON.stringify(output));
 		}
 
@@ -114,7 +114,7 @@ async function testClaudeOutput() {
 		console.log("✓ All processes stopped");
 
 		console.log("\n✅ All tests completed successfully!");
-		
+
 	} catch (error) {
 		console.error("❌ Test failed:", error);
 		await manager.stopAll();
