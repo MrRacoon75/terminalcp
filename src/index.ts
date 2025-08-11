@@ -1,19 +1,20 @@
 #!/usr/bin/env node
+import { type ChildProcess, spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-	CallToolRequestSchema,
-	ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import { spawn, ChildProcess } from "node:child_process";
-import { Terminal } from "@xterm/headless";
-import crypto from "node:crypto";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { Terminal as XtermTerminalType } from "@xterm/headless";
+import xterm from "@xterm/headless";
+
+// Extract Terminal class from the module
+const Terminal = xterm.Terminal;
 
 interface Process {
 	id: string;
 	command: string;
 	process: ChildProcess;
-	terminal: Terminal;
+	terminal: XtermTerminalType;
 	startedAt: Date;
 }
 
@@ -28,7 +29,7 @@ const server = new Server(
 		capabilities: {
 			tools: {},
 		},
-	}
+	},
 );
 
 // Define the terminal tool
@@ -65,7 +66,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	}
 
 	const args = request.params.arguments?.args as any;
-	
+
 	if (!args || typeof args !== "object") {
 		throw new Error("Invalid arguments: expected JSON object");
 	}
@@ -84,6 +85,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				cols: 80,
 				rows: 24,
 				scrollback: 10000,
+				allowProposedApi: true,
 			});
 
 			const proc = spawn(command, {
@@ -161,7 +163,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			const buffer = proc.terminal.buffer.active;
 			const totalLines = buffer.length;
 			const startLine = lines ? Math.max(0, totalLines - lines) : 0;
-			
+
 			let output = "";
 			for (let i = startLine; i < totalLines; i++) {
 				const line = buffer.getLine(i);

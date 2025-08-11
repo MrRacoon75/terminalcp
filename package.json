@@ -14,7 +14,7 @@
 		"prepublishOnly": "npm run clean && npm run build",
 		"check": "biome check --write . && tsc --noEmit",
 		"prepare": "husky",
-		"test": "echo 'No tests yet'"
+		"test": "tsx test/mcp-server.test.ts"
 	},
 	"files": [
 		"dist/**/*",
@@ -38,6 +38,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.1.4",
+		"@modelcontextprotocol/sdk": "^1.17.2",
 		"@types/node": "^22.10.5",
 		"husky": "^9.1.7",
 		"tsx": "^4.20.3",
@@ -45,7 +46,6 @@
 	},
 	"types": "./dist/index.d.ts",
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.0.4",
 		"@xterm/headless": "^5.5.0",
 		"zod": "^3.25.76"
 	}
