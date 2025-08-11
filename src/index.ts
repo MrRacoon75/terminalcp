@@ -50,10 +50,35 @@ Examples:
 				properties: {
 					args: {
 						type: "object",
-						required: true,
+						properties: {
+							action: {
+								type: "string",
+								enum: ["start", "stop", "stdout", "stdin", "list"],
+								description: "The action to perform",
+							},
+							command: {
+								type: "string",
+								description: "Command to execute (required for 'start' action)",
+							},
+							id: {
+								type: "string",
+								description: "Process ID (required for 'stop', 'stdout', 'stdin' actions)",
+							},
+							data: {
+								type: "string",
+								description: "Data to send to stdin (required for 'stdin' action)",
+							},
+							lines: {
+								type: "number",
+								description: "Number of lines to retrieve (optional for 'stdout' action)",
+							},
+						},
+						required: ["action"],
+						additionalProperties: false,
 					},
 				},
 				required: ["args"],
+				additionalProperties: false,
 			},
 		},
 	],
