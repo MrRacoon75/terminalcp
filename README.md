@@ -1,10 +1,19 @@
 # terminalcp
 
-MCP server for spawning and controlling background processes with virtual terminals.
+Let AI agents control interactive command-line tools like a human would.
 
-## What it solves
+## What it does
 
-terminalcp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a pseudo-TTY with a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
+terminalcp enables AI agents to spawn and interact with any CLI tool in real-time - from debuggers like LLDB and GDB to other AI coding assistants like Claude Code, Gemini CLI, and Codex. Think of it as Playwright for the terminal: your agent can start processes, send keystrokes, read output, and maintain full interactive sessions with tools that normally require human input.
+
+Key capabilities:
+- Debug code step-by-step using command-line debuggers (LLDB, GDB, pdb)
+- Collaborate with other AI tools by running them as subprocesses
+- Interact with REPLs (Python, Node, Ruby), database shells, and system monitors
+- Control any interactive CLI that expects human input
+- Run multiple processes simultaneously without blocking the agent
+
+Each process runs in a proper pseudo-TTY with full terminal emulation, preserving colors, cursor movement, and special key sequences - exactly as if a human were typing at the keyboard. Processes run in the background, so your agent stays responsive while managing long-running tools.
 
 ## Requirements
 - Node.js 18 or newer
@@ -33,7 +42,7 @@ First, install the terminalcp MCP server with your client.
 Use the Claude Code CLI to add the terminalcp server:
 
 ```bash
-claude mcp add terminalcp npx @mariozechner/terminalcp@latest
+claude mcp add -s user terminalcp npx @mariozechner/terminalcp@latest
 ```
 </details>
 
@@ -106,7 +115,7 @@ Then use this config:
 {"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
 {"action": "stdin", "id": "proc-123", "data": "\r"}  // Submit with carriage return
 
-// Get response
+// Get the full terminal output from the process
 {"action": "stdout", "id": "proc-123"}
 
 // Clean up when done
@@ -135,6 +144,7 @@ Then use this config:
 - **Interactive CLIs**: Must send text and Enter (`\r`) as separate stdin calls - see examples above
 - **Aliases don't work**: Use absolute paths (e.g., `/Users/username/.claude/local/claude`)
 - **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
+- **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
 
 ## How it works
 
