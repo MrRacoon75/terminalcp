@@ -32,11 +32,11 @@ async function testClaudeOutput() {
 			arguments: {
 				args: {
 					action: "start",
-					command: "/Users/badlogic/.claude/local/node_modules/.bin/claude --help",
+					command: "/Users/badlogic/.claude/local/node_modules/.bin/claude",
 				},
 			},
 		});
-		
+
 		const processId = JSON.parse(result.content[0].text).id;
 		console.log(`✓ Started claude with ID: ${processId}`);
 
@@ -84,7 +84,7 @@ async function testClaudeOutput() {
 				},
 			},
 		});
-		
+
 		const lessId = JSON.parse(lessResult.content[0].text).id;
 		console.log(`✓ Started less with ID: ${lessId}`);
 
