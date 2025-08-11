@@ -44,7 +44,7 @@ async function testMCPServer() {
 			arguments: {
 				args: {
 					action: "start",
-					command: "echo 'Hello from MCP test!'",
+					command: "bash -c 'echo Hello from MCP test!; sleep 2; echo Done'",
 				},
 			},
 		});
@@ -53,7 +53,7 @@ async function testMCPServer() {
 		console.log(`✓ Process started with ID: ${processId}`);
 
 		// Give process time to execute
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 1000));
 
 		// Test: Get output
 		console.log("\nTest 2: Getting process output...");

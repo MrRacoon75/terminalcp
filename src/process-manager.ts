@@ -1,14 +1,14 @@
-import { type ChildProcess, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import xterm from "@xterm/headless";
+import * as pty from "node-pty";
 
 const Terminal = xterm.Terminal;
 
 export interface ManagedProcess {
 	id: string;
 	command: string;
-	process: ChildProcess;
+	process: pty.IPty;
 	terminal: XtermTerminalType;
 	startedAt: Date;
 	rawOutput: string;
@@ -36,10 +36,13 @@ export class ProcessManager {
 			convertEol: true, // Convert \n to \r\n
 		});
 
-		const proc = spawn(command, {
-			shell: true,
-			stdio: ["pipe", "pipe", "pipe"],
-			env: { ...process.env, TERM: "xterm-256color" },
+		// Use node-pty to create a pseudo-terminal
+		const proc = pty.spawn(process.env.SHELL || "/bin/bash", ["-c", command], {
+			name: "xterm-256color",
+			cols: 80,
+			rows: 24,
+			cwd: process.cwd(),
+			env: process.env as { [key: string]: string },
 		});
 
 		// Create process entry
@@ -52,30 +55,21 @@ export class ProcessManager {
 			rawOutput: "",
 		};
 
-		// Pipe stdout/stderr to terminal and capture raw output
-		proc.stdout?.on("data", (data) => {
-			const str = data.toString();
-			processEntry.rawOutput += str;
-			terminal.write(data);
-		});
-
-		proc.stderr?.on("data", (data) => {
-			const str = data.toString();
-			processEntry.rawOutput += str;
+		// Capture output from PTY
+		proc.onData((data) => {
+			processEntry.rawOutput += data;
 			terminal.write(data);
 		});
 
 		// Handle process exit
-		proc.on("exit", (code, signal) => {
+		proc.onExit((exitCode) => {
+			const code = exitCode.exitCode;
+			const signal = exitCode.signal;
 			const exitMsg = `\n[Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}]\n`;
 			processEntry.rawOutput += exitMsg;
 			terminal.write(exitMsg);
-		});
-
-		proc.on("error", (error) => {
-			const errorMsg = `\n[Process error: ${error.message}]\n`;
-			processEntry.rawOutput += errorMsg;
-			terminal.write(errorMsg);
+			// Remove the process from the map when it exits
+			this.processes.delete(id);
 		});
 
 		this.processes.set(id, processEntry);
@@ -91,7 +85,7 @@ export class ProcessManager {
 			throw new Error(`Process not found: ${id}`);
 		}
 
-		proc.process.kill("SIGTERM");
+		proc.process.kill();
 		this.processes.delete(id);
 	}
 
@@ -104,29 +98,19 @@ export class ProcessManager {
 			throw new Error(`Process not found: ${id}`);
 		}
 
-		proc.process.stdin?.write(data);
+		proc.process.write(data);
 	}
 
 	/**
 	 * Get output from a process
 	 */
-	async getOutput(id: string, options?: { lines?: number; raw?: boolean }): Promise<string> {
+	async getOutput(id: string, options?: { lines?: number }): Promise<string> {
 		const proc = this.processes.get(id);
 		if (!proc) {
 			throw new Error(`Process not found: ${id}`);
 		}
 
-		// If raw output is requested, return the raw output with ANSI sequences
-		if (options?.raw) {
-			if (options.lines) {
-				const rawLines = proc.rawOutput.split("\n");
-				const startIdx = Math.max(0, rawLines.length - options.lines);
-				return rawLines.slice(startIdx).join("\n");
-			}
-			return proc.rawOutput;
-		}
-
-		// Otherwise return terminal buffer (processed output)
+		// Return terminal buffer (processed output)
 		// IMPORTANT: Flush the terminal first to ensure all writes are processed
 		await this.flushTerminal(proc.terminal);
 
@@ -179,12 +163,14 @@ export class ProcessManager {
 		command: string;
 		startedAt: string;
 		running: boolean;
+		pid?: number;
 	}> {
 		return Array.from(this.processes.values()).map((p) => ({
 			id: p.id,
 			command: p.command,
 			startedAt: p.startedAt.toISOString(),
-			running: !p.process.killed,
+			running: p.process.pid !== undefined,
+			pid: p.process.pid,
 		}));
 	}
 
@@ -200,7 +186,7 @@ export class ProcessManager {
 	 */
 	async stopAll(): Promise<void> {
 		for (const proc of this.processes.values()) {
-			proc.process.kill("SIGTERM");
+			proc.process.kill();
 		}
 		this.processes.clear();
 	}

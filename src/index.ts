@@ -26,14 +26,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 			description: `Control background processes with virtual terminals.
 
 Examples:
-  Start: {"action": "start", "command": "npm run dev"}
-  Stop: {"action": "stop", "id": "proc-abc123"}
+  Start dev server: {"action": "start", "command": "npm run dev"}
+  Run debugger: {"action": "start", "command": "lldb ./myapp"}
+  Start Claude: {"action": "start", "command": "claude"}
+  Stop process: {"action": "stop", "id": "proc-abc123"}
   Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
-  Get raw output: {"action": "stdout", "id": "proc-abc123", "raw": true}
-  Send input: {"action": "stdin", "id": "proc-abc123", "data": "ls\\n"}
-  List: {"action": "list"}
+  Send command: {"action": "stdin", "id": "proc-abc123", "data": "break main\\n"}
+  List processes: {"action": "list"}
 
-Note: Use raw: true for TUI apps (vim, htop, etc) to get ANSI sequences`,
+Interactive examples:
+  LLDB: start → stdin "run\\n" → stdin "bt\\n" → stdout
+  Claude: start → stdin "say hello\\n" → stdout
+  Python: start "python3 -i" → stdin "print('hi')\\n" → stdout`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -60,11 +64,6 @@ Note: Use raw: true for TUI apps (vim, htop, etc) to get ANSI sequences`,
 							lines: {
 								type: "number",
 								description: "Number of lines to retrieve (optional for 'stdout' action)",
-							},
-							raw: {
-								type: "boolean",
-								description:
-									"Return raw output with ANSI sequences (optional for 'stdout' action, default: false)",
 							},
 						},
 						required: ["action"],
@@ -130,12 +129,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		}
 
 		case "stdout": {
-			const { id, lines, raw } = args;
+			const { id, lines } = args;
 			if (!id) {
 				throw new Error("Missing required field: id");
 			}
 
-			const output = await processManager.getOutput(id, { lines, raw });
+			const output = await processManager.getOutput(id, { lines });
 
 			return {
 				content: [
