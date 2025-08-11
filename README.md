@@ -1,21 +1,21 @@
-# tuicp
+# terminalcp
 
 MCP server for spawning and controlling background processes with virtual terminals.
 
 ## What it solves
 
-tuicp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a pseudo-TTY with a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
+terminalcp enables AI agents to spawn long-running processes in the background and interact with them through a virtual terminal interface. This solves the problem of agents needing to manage interactive processes, monitor their output, and send input - all while maintaining the full terminal context including ANSI escape sequences. Each process runs in a pseudo-TTY with a headless xterm.js terminal, preserving complete terminal state and scrollback buffer.
 
 ## Installation
 
 Install globally:
 ```bash
-npm install -g @mariozechner/tuicp
+npm install -g @mariozechner/terminalcp
 ```
 
 Or run directly with npx:
 ```bash
-npx @mariozechner/tuicp
+npx @mariozechner/terminalcp
 ```
 
 ## Real-world Examples
@@ -64,7 +64,7 @@ npx @mariozechner/tuicp
 
 ## How it works
 
-tuicp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes, each running in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
+terminalcp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes, each running in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
 
 ### Tool: `terminal`
 
@@ -135,9 +135,9 @@ Add to your MCP settings:
 ```json
 {
   "mcpServers": {
-    "tuicp": {
+    "terminalcp": {
       "command": "npx",
-      "args": ["@mariozechner/tuicp"]
+      "args": ["@mariozechner/terminalcp"]
     }
   }
 }

@@ -1,11 +1,11 @@
 {
-	"name": "@mariozechner/tuicp",
+	"name": "@mariozechner/terminalcp",
 	"version": "1.0.0",
 	"description": "MCP server for spawning and controlling background processes with virtual terminals",
 	"type": "module",
 	"main": "dist/index.js",
 	"bin": {
-		"tuicp": "dist/index.js"
+		"terminalcp": "dist/index.js"
 	},
 	"scripts": {
 		"build": "tsc && chmod +x dist/index.js",
@@ -31,7 +31,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/badlogic/tuicp.git"
+		"url": "git+https://github.com/badlogic/terminalcp.git"
 	},
 	"engines": {
 		"node": ">=20.0.0"

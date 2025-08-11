@@ -8,7 +8,7 @@ const processManager = new ProcessManager();
 
 const server = new Server(
 	{
-		name: "tuicp",
+		name: "terminalcp",
 		version: "1.0.0",
 	},
 	{
@@ -195,7 +195,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Cleanup on exit
 process.on("SIGINT", async () => {
-	console.error("Shutting down tuicp server...");
+	console.error("Shutting down terminalcp server...");
 	await processManager.stopAll();
 	process.exit(0);
 });
@@ -204,7 +204,7 @@ process.on("SIGINT", async () => {
 async function main() {
 	const transport = new StdioServerTransport();
 	await server.connect(transport);
-	console.error("tuicp MCP server running on stdio");
+	console.error("terminalcp MCP server running on stdio");
 }
 
 main().catch((error) => {
