@@ -29,6 +29,8 @@ Examples:
   Start dev server: {"action": "start", "command": "npm run dev", "cwd": "/path/to/project"}
   Start Claude: {"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"}
   Start Gemini: {"action": "start", "command": "gemini"}
+  Send prompt: {"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
+  Submit with Enter: {"action": "stdin", "id": "proc-123", "data": "\\r"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
   Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
   List processes: {"action": "list"}
