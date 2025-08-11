@@ -16,6 +16,7 @@ interface Process {
 	process: ChildProcess;
 	terminal: XtermTerminalType;
 	startedAt: Date;
+	rawOutput: string; // Store raw output including ANSI sequences
 }
 
 const processes = new Map<string, Process>();
@@ -43,8 +44,11 @@ Examples:
   Start: {"action": "start", "command": "npm run dev"}
   Stop: {"action": "stop", "id": "proc-abc123"}
   Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
+  Get raw output: {"action": "stdout", "id": "proc-abc123", "raw": true}
   Send input: {"action": "stdin", "id": "proc-abc123", "data": "ls\\n"}
-  List: {"action": "list"}`,
+  List: {"action": "list"}
+
+Note: Use raw: true for TUI apps (vim, htop, etc) to get ANSI sequences`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -71,6 +75,11 @@ Examples:
 							lines: {
 								type: "number",
 								description: "Number of lines to retrieve (optional for 'stdout' action)",
+							},
+							raw: {
+								type: "boolean",
+								description:
+									"Return raw output with ANSI sequences (optional for 'stdout' action, default: false)",
 							},
 						},
 						required: ["action"],
@@ -118,27 +127,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				env: { ...process.env, TERM: "xterm-256color" },
 			});
 
-			// Pipe stdout/stderr to terminal
-			proc.stdout?.on("data", (data) => {
-				terminal.write(data);
-			});
-
-			proc.stderr?.on("data", (data) => {
-				terminal.write(data);
-			});
-
-			// Handle process exit
-			proc.on("exit", (code, signal) => {
-				terminal.write(`\n[Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}]\n`);
-			});
-
-			processes.set(id, {
+			// Create process entry
+			const processEntry: Process = {
 				id,
 				command,
 				process: proc,
 				terminal,
 				startedAt: new Date(),
+				rawOutput: "",
+			};
+
+			// Pipe stdout/stderr to terminal and capture raw output
+			proc.stdout?.on("data", (data) => {
+				const str = data.toString();
+				processEntry.rawOutput += str;
+				terminal.write(data);
 			});
+
+			proc.stderr?.on("data", (data) => {
+				const str = data.toString();
+				processEntry.rawOutput += str;
+				terminal.write(data);
+			});
+
+			// Handle process exit
+			proc.on("exit", (code, signal) => {
+				const exitMsg = `\n[Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}]\n`;
+				processEntry.rawOutput += exitMsg;
+				terminal.write(exitMsg);
+			});
+
+			processes.set(id, processEntry);
 
 			return {
 				content: [
@@ -175,7 +194,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		}
 
 		case "stdout": {
-			const { id, lines } = args;
+			const { id, lines, raw } = args;
 			if (!id) {
 				throw new Error("Missing required field: id");
 			}
@@ -185,6 +204,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				throw new Error(`Process not found: ${id}`);
 			}
 
+			// If raw output is requested, return the raw output with ANSI sequences
+			if (raw) {
+				// If lines specified, get last N lines of raw output
+				if (lines) {
+					const rawLines = proc.rawOutput.split("\n");
+					const startIdx = Math.max(0, rawLines.length - lines);
+					const output = rawLines.slice(startIdx).join("\n");
+					return {
+						content: [
+							{
+								type: "text",
+								text: output || "[No output]",
+							},
+						],
+					};
+				}
+				return {
+					content: [
+						{
+							type: "text",
+							text: proc.rawOutput || "[No output]",
+						},
+					],
+				};
+			}
+
+			// Otherwise return terminal buffer (processed output)
 			const buffer = proc.terminal.buffer.active;
 			const totalLines = buffer.length;
 			const startLine = lines ? Math.max(0, totalLines - lines) : 0;
@@ -219,6 +265,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			}
 
 			proc.process.stdin?.write(data);
+			// Note: The input echo (if any) will be captured via stdout
 
 			return {
 				content: [
