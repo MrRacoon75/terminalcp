@@ -58,18 +58,9 @@ npx @mariozechner/tuicp
 
 ## Important Usage Notes
 
-### Interactive CLI Submission
-**CRITICAL**: For interactive CLIs, text input and Enter key must be sent as **separate** stdin calls:
-1. First send the text: `{"action": "stdin", "id": "proc-id", "data": "your command"}`
-2. Then send carriage return: `{"action": "stdin", "id": "proc-id", "data": "\r"}`
-
-This is required for proper input handling in applications like Claude, Gemini, Python REPL, etc.
-
-### Process Cleanup
-Always stop processes when done to free resources:
-```json
-{"action": "stop", "id": "proc-id"}
-```
+- **Interactive CLIs**: Must send text and Enter (`\r`) as separate stdin calls - see examples above
+- **Aliases don't work**: Use absolute paths (e.g., `/Users/username/.claude/local/claude`)
+- **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
 
 ## How it works
 
@@ -88,14 +79,6 @@ The terminal tool accepts a JSON object with different action types:
 }
 ```
 **Returns**: Process ID, command, status, and working directory
-
-**Note**: Aliases don't work - use absolute paths for commands like Claude:
-```json
-{
-  "action": "start",
-  "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"
-}
-```
 
 #### Stop a process
 ```json
@@ -126,13 +109,7 @@ The terminal tool accepts a JSON object with different action types:
 ```
 **Returns**: Confirmation of input sent
 
-**Important for interactive CLIs**: Send text and Enter separately:
-```json
-// First send the command text
-{"action": "stdin", "id": "proc-abc123", "data": "print('hello')"}
-// Then send carriage return to submit
-{"action": "stdin", "id": "proc-abc123", "data": "\r"}
-```
+For interactive CLIs, send text and Enter separately (see examples above).
 
 Send ANSI sequences like Ctrl+C:
 ```json
