@@ -1,0 +1,52 @@
+{
+	"name": "@mariozechner/tuicp",
+	"version": "1.0.0",
+	"description": "MCP server for spawning and controlling background processes with virtual terminals",
+	"type": "module",
+	"main": "dist/index.js",
+	"bin": {
+		"tuicp": "dist/index.js"
+	},
+	"scripts": {
+		"build": "tsc && chmod +x dist/index.js",
+		"dev": "tsx src/index.ts",
+		"clean": "rm -rf dist",
+		"prepublishOnly": "npm run clean && npm run build",
+		"check": "biome check --write . && tsc --noEmit",
+		"prepare": "husky",
+		"test": "echo 'No tests yet'"
+	},
+	"files": [
+		"dist/**/*",
+		"README.md"
+	],
+	"keywords": [
+		"mcp",
+		"terminal",
+		"process",
+		"xterm",
+		"virtual-terminal"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/tuicp.git"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.1.4",
+		"@types/node": "^22.10.5",
+		"husky": "^9.1.7",
+		"tsx": "^4.20.3",
+		"typescript": "^5.9.2"
+	},
+	"types": "./dist/index.d.ts",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.0.4",
+		"@xterm/headless": "^5.5.0",
+		"zod": "^3.25.76"
+	}
+}
