@@ -2,8 +2,8 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { TerminalClient } from "./client.js";
-import { ProcessManager } from "./process-manager.js";
+import { AttachClient } from "./attach-client.js";
+import { TerminalServerClient } from "./terminal-client.js";
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -11,32 +11,201 @@ const args = process.argv.slice(2);
 // Check if running in CLI mode
 if (args.length > 0) {
 	// CLI mode
-	const client = new TerminalClient();
 
 	if (args[0] === "ls" || args[0] === "list") {
 		// List sessions
-		client.listSessions().then(() => process.exit(0));
+		const client = new AttachClient();
+		client
+			.listSessions()
+			.then(() => process.exit(0))
+			.catch((err) => {
+				console.error(err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "start") {
+		// Start a new session
+		if (args.length < 3) {
+			console.error("Usage: terminalcp start <session-id> <command> [args...]");
+			process.exit(1);
+		}
+		const sessionId = args[1];
+		const command = args.slice(2).join(" ");
+
+		const serverClient = new TerminalServerClient();
+		serverClient
+			.request("start", { command, name: sessionId })
+			.then((id) => {
+				console.log(`Started session: ${id}`);
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to start session:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "stop") {
+		// Stop a session
+		const sessionId = args[1]; // Optional
+		const serverClient = new TerminalServerClient();
+		serverClient
+			.request("stop", { id: sessionId })
+			.then((result) => {
+				console.log(result);
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to stop session:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "stdout") {
+		// Get stdout from a session
+		if (!args[1]) {
+			console.error("Usage: terminalcp stdout <id> [lines]");
+			process.exit(1);
+		}
+		const serverClient = new TerminalServerClient();
+		const lines = args[2] ? parseInt(args[2]) : undefined;
+		serverClient
+			.request("stdout", { id: args[1], lines })
+			.then((output) => {
+				process.stdout.write(output);
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to get stdout:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "stream") {
+		// Get raw stream from a session
+		if (!args[1]) {
+			console.error("Usage: terminalcp stream <id> [--since-last] [--with-ansi]");
+			process.exit(1);
+		}
+		const serverClient = new TerminalServerClient();
+		const since_last = args.includes("--since-last");
+		const strip_ansi = !args.includes("--with-ansi");
+		serverClient
+			.request("stream", { id: args[1], since_last, strip_ansi })
+			.then((output) => {
+				process.stdout.write(output);
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to get stream:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "stdin") {
+		// Send stdin to a session
+		if (args.length < 3) {
+			console.error("Usage: terminalcp stdin <id> <data> [--submit]");
+			process.exit(1);
+		}
+		const serverClient = new TerminalServerClient();
+		const submit = args.includes("--submit");
+		const dataArgs = args.slice(2).filter((arg) => arg !== "--submit");
+		const data = dataArgs.join(" ");
+		serverClient
+			.request("stdin", { id: args[1], data, submit })
+			.then(() => {
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to send stdin:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "term-size") {
+		// Get terminal size
+		if (!args[1]) {
+			console.error("Usage: terminalcp term-size <id>");
+			process.exit(1);
+		}
+		const serverClient = new TerminalServerClient();
+		serverClient
+			.request("term-size", { id: args[1] })
+			.then((result) => {
+				console.log(result);
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to get terminal size:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "resize") {
+		// Resize terminal
+		if (args.length < 4) {
+			console.error("Usage: terminalcp resize <id> <cols> <rows>");
+			process.exit(1);
+		}
+		const serverClient = new TerminalServerClient();
+		serverClient
+			.request("resize", {
+				id: args[1],
+				cols: parseInt(args[2]),
+				rows: parseInt(args[3]),
+			})
+			.then(() => {
+				console.log("Terminal resized");
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to resize terminal:", err.message);
+				process.exit(1);
+			});
 	} else if (args[0] === "attach") {
 		// Attach to session
 		if (!args[1]) {
-			console.error("Usage: terminalcp attach <name|id>");
+			console.error("Usage: terminalcp attach <id>");
 			process.exit(1);
 		}
-		client.attach(args[1]).catch(() => process.exit(1));
+		const client = new AttachClient();
+		client.attach(args[1]).catch((err) => {
+			console.error(err.message);
+			process.exit(1);
+		});
+	} else if (args[0] === "kill-server") {
+		// Kill the terminal server
+		const serverClient = new TerminalServerClient();
+		serverClient
+			.request("kill-server")
+			.then(() => {
+				console.log("Server killed");
+				process.exit(0);
+			})
+			.catch((err) => {
+				console.error("Failed to kill server:", err.message);
+				process.exit(1);
+			});
+	} else if (args[0] === "--server") {
+		// Run in server mode (internal use)
+		import("./server.js").then(({ TerminalServer }) => {
+			const server = new TerminalServer();
+			server.start().catch((err) => {
+				console.error("Failed to start server:", err);
+				process.exit(1);
+			});
+		});
 	} else {
-		// Try to attach to the first argument as a session name/id
-		client.attach(args[0]).catch(() => {
+		// Try to attach to the first argument as a session id
+		const client = new AttachClient();
+		client.attach(args[0]).catch((err) => {
 			console.error(`Unknown command or session: ${args[0]}`);
 			console.error("Usage:");
-			console.error("  terminalcp              - Start MCP server");
-			console.error("  terminalcp ls           - List active sessions");
-			console.error("  terminalcp attach <id>  - Attach to a session");
+			console.error("  terminalcp                       - Start MCP server");
+			console.error("  terminalcp ls                    - List active sessions");
+			console.error("  terminalcp start <id> <cmd>      - Start a new session");
+			console.error("  terminalcp stop [id]             - Stop session(s)");
+			console.error("  terminalcp attach <id>           - Attach to a session");
+			console.error("  terminalcp stdout <id> [lines]   - Get terminal output");
+			console.error("  terminalcp stream <id> [opts]    - Get raw stream (--since-last, --with-ansi)");
+			console.error("  terminalcp stdin <id> <data>     - Send input (--submit adds Enter)");
+			console.error("  terminalcp term-size <id>        - Get terminal size");
+			console.error("  terminalcp resize <id> <c> <r>   - Resize terminal");
+			console.error("  terminalcp kill-server           - Kill the terminal server");
 			process.exit(1);
 		});
 	}
 } else {
 	// MCP server mode
-	const processManager = new ProcessManager();
+	const serverClient = new TerminalServerClient();
 
 	const server = new Server(
 		{
@@ -170,7 +339,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required field: command");
 				}
 
-				const id = await processManager.start(command, { cwd, name });
+				const id = await serverClient.request("start", { command, cwd, name });
 
 				// Minimal response - just return the ID
 				return {
@@ -185,33 +354,13 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 			case "stop": {
 				const { id } = args;
-
-				if (!id) {
-					// Stop all processes if no ID provided
-					const allProcesses = processManager.listProcesses();
-					let count = 0;
-					for (const proc of allProcesses) {
-						await processManager.stop(proc.id);
-						count++;
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: `stopped ${count} processes`,
-							},
-						],
-					};
-				}
-
-				await processManager.stop(id);
+				const result = await serverClient.request("stop", { id });
 
 				return {
 					content: [
 						{
 							type: "text",
-							text: `stopped ${id}`,
+							text: result,
 						},
 					],
 				};
@@ -223,7 +372,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required field: id");
 				}
 
-				const output = await processManager.getOutput(id, { lines });
+				const output = await serverClient.request("stdout", { id, lines });
 
 				// Return raw output string directly
 				return {
@@ -242,8 +391,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required fields: id, data");
 				}
 
-				const inputData = submit ? `${data}\r` : data;
-				await processManager.sendInput(id, inputData);
+				await serverClient.request("stdin", { id, data, submit });
 
 				// Minimal response - no content needed for stdin
 				return {
@@ -252,16 +400,13 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "list": {
-				const list = processManager.listProcesses();
-
-				// Minimal format: one session per line (id status cwd command)
-				const lines = list.map((p) => `${p.id} ${p.running ? "running" : "stopped"} ${p.cwd} ${p.command}`);
+				const result = await serverClient.request("list");
 
 				return {
 					content: [
 						{
 							type: "text",
-							text: lines.join("\n"),
+							text: result,
 						},
 					],
 				};
@@ -273,7 +418,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required field: id");
 				}
 
-				const output = await processManager.getStream(id, { since_last, strip_ansi });
+				const output = await serverClient.request("stream", { id, since_last, strip_ansi });
 
 				// Return raw stream output directly
 				return {
@@ -292,14 +437,13 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required field: id");
 				}
 
-				const size = processManager.getTerminalSize(id);
+				const result = await serverClient.request("term-size", { id });
 
-				// Minimal format: rows cols scrollback
 				return {
 					content: [
 						{
 							type: "text",
-							text: `${size.rows} ${size.cols} ${size.scrollback_lines}`,
+							text: result,
 						},
 					],
 				};
@@ -312,8 +456,8 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 	// Cleanup on exit
 	process.on("SIGINT", async () => {
-		console.error("Shutting down terminalcp server...");
-		await processManager.stopAll();
+		console.error("Shutting down MCP server...");
+		serverClient.close();
 		process.exit(0);
 	});
 
