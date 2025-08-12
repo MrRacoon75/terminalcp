@@ -1,9 +1,26 @@
 import crypto from "node:crypto";
+import { stripVTControlCharacters } from "node:util";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import xterm from "@xterm/headless";
 import * as pty from "node-pty";
 
 const Terminal = xterm.Terminal;
+
+class WriteQueue {
+	private queue = Promise.resolve();
+
+	enqueue(writeFn: () => Promise<void> | void): void {
+		this.queue = this.queue
+			.then(() => writeFn())
+			.catch((error) => {
+				console.error("WriteQueue error:", error);
+			});
+	}
+
+	async drain(): Promise<void> {
+		await this.queue;
+	}
+}
 
 export interface ManagedProcess {
 	id: string;
@@ -12,6 +29,9 @@ export interface ManagedProcess {
 	terminal: XtermTerminalType;
 	startedAt: Date;
 	rawOutput: string;
+	lastStreamReadPosition: number;
+	terminalWriteQueue: WriteQueue;
+	ptyWriteQueue: WriteQueue;
 }
 
 export interface ProcessOutput {
@@ -53,12 +73,20 @@ export class ProcessManager {
 			terminal,
 			startedAt: new Date(),
 			rawOutput: "",
+			lastStreamReadPosition: 0,
+			terminalWriteQueue: new WriteQueue(),
+			ptyWriteQueue: new WriteQueue(),
 		};
 
 		// Capture output from PTY
 		proc.onData((data) => {
 			processEntry.rawOutput += data;
-			terminal.write(data);
+			// Queue terminal write to prevent race conditions
+			processEntry.terminalWriteQueue.enqueue(async () => {
+				await new Promise<void>((resolve) => {
+					terminal.write(data, () => resolve());
+				});
+			});
 		});
 
 		// Handle process exit
@@ -67,7 +95,12 @@ export class ProcessManager {
 			const signal = exitCode.signal;
 			const exitMsg = `\n[Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}]\n`;
 			processEntry.rawOutput += exitMsg;
-			terminal.write(exitMsg);
+			// Queue terminal write for exit message
+			processEntry.terminalWriteQueue.enqueue(async () => {
+				await new Promise<void>((resolve) => {
+					terminal.write(exitMsg, () => resolve());
+				});
+			});
 			// Remove the process from the map when it exits
 			this.processes.delete(id);
 		});
@@ -98,7 +131,10 @@ export class ProcessManager {
 			throw new Error(`Process not found: ${id}`);
 		}
 
-		proc.process.write(data);
+		// Queue pty write to prevent race conditions
+		proc.ptyWriteQueue.enqueue(() => {
+			proc.process.write(data);
+		});
 	}
 
 	/**
@@ -111,8 +147,8 @@ export class ProcessManager {
 		}
 
 		// Return terminal buffer (processed output)
-		// IMPORTANT: Flush the terminal first to ensure all writes are processed
-		await this.flushTerminal(proc.terminal);
+		// IMPORTANT: Drain the write queue first to ensure all writes are processed
+		await proc.terminalWriteQueue.drain();
 
 		const buffer = proc.terminal.buffer.active;
 		const totalLines = buffer.length;
@@ -139,7 +175,7 @@ export class ProcessManager {
 		}
 
 		// Get buffer output
-		await this.flushTerminal(proc.terminal);
+		await proc.terminalWriteQueue.drain();
 		const buffer = proc.terminal.buffer.active;
 		let bufferOutput = "";
 		for (let i = 0; i < buffer.length; i++) {
@@ -153,6 +189,37 @@ export class ProcessManager {
 			buffer: bufferOutput || "[No output]",
 			raw: proc.rawOutput || "[No output]",
 		};
+	}
+
+	/**
+	 * Get raw stream output (with optional ANSI stripping)
+	 */
+	async getStream(
+		id: string,
+		options?: { since_last?: boolean; strip_ansi?: boolean },
+	): Promise<string> {
+		const proc = this.processes.get(id);
+		if (!proc) {
+			throw new Error(`Process not found: ${id}`);
+		}
+
+		let output: string;
+
+		if (options?.since_last) {
+			// Get only new output since last read
+			output = proc.rawOutput.substring(proc.lastStreamReadPosition);
+			proc.lastStreamReadPosition = proc.rawOutput.length;
+		} else {
+			// Get all output
+			output = proc.rawOutput;
+		}
+
+		// Strip ANSI codes if requested
+		if (options?.strip_ansi && output) {
+			output = stripVTControlCharacters(output);
+		}
+
+		return output || "[No output]";
 	}
 
 	/**
@@ -189,15 +256,6 @@ export class ProcessManager {
 			proc.process.kill();
 		}
 		this.processes.clear();
-	}
-
-	/**
-	 * Helper to flush terminal writes
-	 */
-	private async flushTerminal(terminal: XtermTerminalType): Promise<void> {
-		return new Promise<void>((resolve) => {
-			terminal.write("", () => resolve());
-		});
 	}
 }
 

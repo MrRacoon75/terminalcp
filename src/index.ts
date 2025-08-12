@@ -33,8 +33,13 @@ Examples:
   Send without submit: {"action": "stdin", "id": "proc-123", "data": "partial input"}
   Manual Enter key: {"action": "stdin", "id": "proc-123", "data": "\\r"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
-  Get output: {"action": "stdout", "id": "proc-abc123", "lines": 50}
+  Get terminal screen: {"action": "stdout", "id": "proc-abc123", "lines": 50}
+  Get raw stream (for logs/builds): {"action": "stream", "id": "proc-abc123", "since_last": true, "strip_ansi": true}
   List processes: {"action": "list"}
+
+Output modes:
+  - stdout: Returns rendered terminal screen with scrollback (use for TUIs, REPLs, debuggers)
+  - stream: Returns raw output with ANSI codes (use for logs, builds, incremental monitoring)
 
 Interactive CLI usage:
   - Use submit: true to automatically append Enter key (\\r) to your input
@@ -54,7 +59,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 						properties: {
 							action: {
 								type: "string",
-								enum: ["start", "stop", "stdout", "stdin", "list"],
+								enum: ["start", "stop", "stdout", "stdin", "list", "stream"],
 								description: "The action to perform",
 							},
 							command: {
@@ -67,7 +72,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							},
 							id: {
 								type: "string",
-								description: "Process ID (required for 'stop', 'stdout', 'stdin' actions)",
+								description: "Process ID (required for 'stop', 'stdout', 'stdin', 'stream' actions)",
 							},
 							data: {
 								type: "string",
@@ -80,6 +85,14 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							lines: {
 								type: "number",
 								description: "Number of lines to retrieve (optional for 'stdout' action)",
+							},
+							since_last: {
+								type: "boolean",
+								description: "Only return output since last stream read (optional for 'stream' action, defaults to false)",
+							},
+							strip_ansi: {
+								type: "boolean",
+								description: "Strip ANSI escape codes from output (optional for 'stream' action, defaults to false)",
 							},
 						},
 						required: ["action"],
@@ -189,6 +202,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 					{
 						type: "text",
 						text: JSON.stringify(list, null, 2),
+					},
+				],
+			};
+		}
+
+		case "stream": {
+			const { id, since_last, strip_ansi } = args;
+			if (!id) {
+				throw new Error("Missing required field: id");
+			}
+
+			const output = await processManager.getStream(id, { since_last, strip_ansi });
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: output,
 					},
 				],
 			};

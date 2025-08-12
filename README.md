@@ -15,6 +15,10 @@ Key capabilities:
 - Control any interactive CLI that expects human input
 - Run multiple processes simultaneously without blocking the agent
 
+Two output modes for different use cases:
+- **Terminal mode (stdout)**: Returns the rendered screen with full scrollback - perfect for TUIs like vim, htop, or interactive debuggers where visual layout matters
+- **Stream mode**: Returns raw output with optional ANSI stripping and incremental reading - ideal for build processes, server logs, and high-volume output where you only need new data
+
 Each process runs in a proper pseudo-TTY with full terminal emulation, preserving colors, cursor movement, and special key sequences - exactly as if a human were typing at the keyboard. Processes run in the background, so your agent stays responsive while managing long-running tools.
 
 ## Requirements
@@ -139,6 +143,22 @@ Then use this config:
 {"action": "start", "command": "lldb ./myapp"}
 {"action": "stdin", "id": "proc-789", "data": "break main", "submit": true}
 {"action": "stdin", "id": "proc-789", "data": "run", "submit": true}
+{"action": "stdout", "id": "proc-789"}  // Get the formatted debugger interface
+```
+
+### Build Process Monitoring
+```json
+{"action": "start", "command": "npm run build"}
+{"action": "stream", "id": "proc-456", "since_last": true}  // Get new output only
+// ... wait a bit ...
+{"action": "stream", "id": "proc-456", "since_last": true}  // Get updates since last check
+```
+
+### Server Log Monitoring
+```json
+{"action": "start", "command": "npm run dev"}
+{"action": "stream", "id": "proc-123", "since_last": true, "strip_ansi": true}
+// Returns clean text without color codes, only new log entries
 ```
 
 ## Important Usage Notes
@@ -175,15 +195,38 @@ The terminal tool accepts a JSON object with different action types:
 ```
 **Returns**: Confirmation of termination
 
-#### Get output from a process
+#### Get terminal screen output (stdout)
 ```json
 {
   "action": "stdout",
   "id": "proc-abc123",
-  "lines": 50
+  "lines": 50  // Optional: limit to last N lines
 }
 ```
-**Returns**: Last N lines from the terminal buffer (or entire buffer if lines not specified)
+**Returns**: Rendered terminal buffer with up to 10,000 lines of scrollback history
+
+Use `stdout` for:
+- TUI applications (vim, htop, less)
+- Interactive debuggers (gdb, lldb)
+- REPLs with formatted output
+- Any tool where visual formatting matters
+
+#### Get raw stream output
+```json
+{
+  "action": "stream",
+  "id": "proc-abc123",
+  "since_last": true,  // Optional: only new output since last read
+  "strip_ansi": true   // Optional: remove ANSI escape codes
+}
+```
+**Returns**: Raw output stream with all ANSI sequences (or stripped if requested)
+
+Use `stream` for:
+- Incremental log monitoring (with `since_last: true`)
+- Build processes and compilation output
+- High-volume streaming data
+- When you need exact bytes as sent
 
 #### Send input to a process
 ```json
