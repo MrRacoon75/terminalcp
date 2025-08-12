@@ -236,23 +236,13 @@ export class ProcessManager {
 				},
 			});
 
-			// Send the current terminal buffer to the new client
-			await processEntry.terminalWriteQueue.drain();
-			const buffer = processEntry.terminal.buffer.active;
-			let bufferContent = "";
-			for (let i = 0; i < buffer.length; i++) {
-				const line = buffer.getLine(i);
-				if (line) {
-					bufferContent += `${line.translateToString(true)}\n`;
-				}
-			}
-
-			if (bufferContent) {
-				// Send the existing buffer as output
+			// Send the raw output history to the new client
+			// This includes all diagnostic messages, stderr, etc.
+			if (processEntry.rawOutput) {
 				socketProtocol.sendToClient(clientId, {
 					type: "output",
 					clientId,
-					payload: { data: bufferContent },
+					payload: { data: processEntry.rawOutput },
 				});
 			}
 		});
