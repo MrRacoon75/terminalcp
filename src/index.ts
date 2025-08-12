@@ -65,8 +65,10 @@ Examples:
   Send without submit: {"action": "stdin", "id": "proc-123", "data": "partial input"}
   Manual Enter key: {"action": "stdin", "id": "proc-123", "data": "\\r"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
+  Stop ALL processes: {"action": "stop"}
   Get terminal screen: {"action": "stdout", "id": "proc-abc123", "lines": 50}
   Get raw stream (for logs/builds): {"action": "stream", "id": "proc-abc123", "since_last": true}
+  Get terminal size: {"action": "term-size", "id": "proc-abc123"}
   List processes: {"action": "list"}
 
 Output modes:
@@ -91,7 +93,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							properties: {
 								action: {
 									type: "string",
-									enum: ["start", "stop", "stdout", "stdin", "list", "stream"],
+									enum: ["start", "stop", "stdout", "stdin", "list", "stream", "term-size"],
 									description: "The action to perform",
 								},
 								command: {
@@ -108,7 +110,8 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 								},
 								id: {
 									type: "string",
-									description: "Process ID (required for 'stop', 'stdout', 'stdin', 'stream' actions)",
+									description:
+										"Process ID (required for 'stdout', 'stdin', 'stream', 'term-size' actions; optional for 'stop' - if omitted, stops all processes)",
 								},
 								data: {
 									type: "string",
@@ -193,8 +196,32 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 			case "stop": {
 				const { id } = args;
+
 				if (!id) {
-					throw new Error("Missing required field: id");
+					// Stop all processes if no ID provided
+					const allProcesses = processManager.listProcesses();
+					const stoppedIds = [];
+					for (const proc of allProcesses) {
+						await processManager.stop(proc.id);
+						stoppedIds.push(proc.id);
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										status: "all stopped",
+										count: stoppedIds.length,
+										ids: stoppedIds,
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
 				}
 
 				await processManager.stop(id);
@@ -272,6 +299,24 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 						{
 							type: "text",
 							text: output,
+						},
+					],
+				};
+			}
+
+			case "term-size": {
+				const { id } = args;
+				if (!id) {
+					throw new Error("Missing required field: id");
+				}
+
+				const size = processManager.getTerminalSize(id);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(size, null, 2),
 						},
 					],
 				};

@@ -130,6 +130,9 @@ Then use this config:
 
 // Clean up when done
 {"action": "stop", "id": "proc-123"}
+
+// Or stop ALL processes at once
+{"action": "stop"}
 ```
 
 ### Python REPL
@@ -166,7 +169,7 @@ Then use this config:
 
 - **Interactive CLIs**: Use `"submit": true` to automatically append Enter key, or send `\r` separately for manual control
 - **Aliases don't work**: Use absolute paths (e.g., `/Users/username/.claude/local/claude`)
-- **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
+- **Process cleanup**: Stop individual processes with `{"action": "stop", "id": "proc-id"}` or all at once with `{"action": "stop"}`
 - **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
 
 ## Attaching to AI-Spawned Sessions
@@ -236,9 +239,15 @@ The terminal tool accepts a JSON object with different action types:
 
 #### Stop a process
 ```json
+// Stop a specific process
 {
   "action": "stop",
   "id": "proc-abc123"
+}
+
+// Stop ALL processes
+{
+  "action": "stop"
 }
 ```
 **Returns**: Confirmation of termination
@@ -301,6 +310,15 @@ Send ANSI sequences like Ctrl+C:
   "data": "\x03"
 }
 ```
+
+#### Get terminal size
+```json
+{
+  "action": "term-size",
+  "id": "proc-abc123"
+}
+```
+**Returns**: Terminal dimensions and scrollback info as `{"rows": 24, "cols": 80, "scrollback_lines": 150}`
 
 #### List all processes
 ```json

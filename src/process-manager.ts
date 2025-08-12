@@ -368,6 +368,25 @@ export class ProcessManager {
 	}
 
 	/**
+	 * Get terminal size (rows and columns) and scrollback buffer info
+	 */
+	getTerminalSize(id: string): { rows: number; cols: number; scrollback_lines: number } {
+		const proc = this.processes.get(id);
+		if (!proc) {
+			throw new Error(`Process not found: ${id}`);
+		}
+
+		// Get the number of lines in the scrollback buffer
+		const scrollbackLines = proc.terminal.buffer.active.length;
+
+		return {
+			rows: proc.terminal.rows,
+			cols: proc.terminal.cols,
+			scrollback_lines: scrollbackLines,
+		};
+	}
+
+	/**
 	 * Get raw stream output (with ANSI stripping by default)
 	 */
 	async getStream(id: string, options?: { since_last?: boolean; strip_ansi?: boolean }): Promise<string> {
