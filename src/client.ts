@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as readline from "node:readline";
 import type { SocketMessage } from "./socket-protocol.js";
 
 export class TerminalClient {
@@ -156,7 +155,7 @@ export class TerminalClient {
 					timestamp: Date.now(),
 					payload: { data: data.toString() },
 				};
-				this.socket.write(JSON.stringify(message) + "\n");
+				this.socket.write(`${JSON.stringify(message)}\n`);
 			}
 		});
 
@@ -234,7 +233,7 @@ export class TerminalClient {
 			timestamp: Date.now(),
 			payload: { cols, rows },
 		};
-		this.socket.write(JSON.stringify(message) + "\n");
+		this.socket.write(`${JSON.stringify(message)}\n`);
 	}
 
 	/**
@@ -250,7 +249,7 @@ export class TerminalClient {
 				timestamp: Date.now(),
 				payload: {},
 			};
-			this.socket.write(JSON.stringify(message) + "\n");
+			this.socket.write(`${JSON.stringify(message)}\n`);
 			this.socket.end();
 		}
 

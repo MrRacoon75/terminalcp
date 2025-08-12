@@ -238,7 +238,7 @@ export class ProcessManager {
 		});
 
 		// Handle messages from socket clients
-		socketProtocol.on("message", (message: SocketMessage, clientId: string) => {
+		socketProtocol.on("message", (message: SocketMessage, _clientId: string) => {
 			switch (message.type) {
 				case "input":
 					// Forward input to PTY

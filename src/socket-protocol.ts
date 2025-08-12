@@ -5,6 +5,7 @@ export interface SocketMessage {
 	type: "output" | "input" | "resize" | "attach" | "detach" | "error";
 	clientId: string;
 	timestamp: number;
+	// biome-ignore lint/suspicious/noExplicitAny: Payload varies by message type
 	payload: any;
 }
 
@@ -28,10 +29,6 @@ export interface ResizePayload {
 
 export class SocketProtocol extends EventEmitter {
 	private clients = new Map<string, net.Socket>();
-
-	constructor() {
-		super();
-	}
 
 	/**
 	 * Add a client connection
@@ -74,7 +71,7 @@ export class SocketProtocol extends EventEmitter {
 		};
 
 		try {
-			socket.write(JSON.stringify(fullMessage) + "\n");
+			socket.write(`${JSON.stringify(fullMessage)}\n`);
 		} catch (err) {
 			console.error(`Failed to send to client ${clientId}:`, err);
 			this.clients.delete(clientId);
@@ -121,7 +118,7 @@ export class SocketProtocol extends EventEmitter {
 	 * Disconnect all clients
 	 */
 	disconnectAll(): void {
-		for (const [clientId, socket] of this.clients) {
+		for (const [_clientId, socket] of this.clients) {
 			socket.end();
 		}
 		this.clients.clear();

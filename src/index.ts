@@ -154,6 +154,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			throw new Error(`Unknown tool: ${request.params.name}`);
 		}
 
+		// biome-ignore lint/suspicious/noExplicitAny: MCP arguments are dynamically typed
 		const args = request.params.arguments?.args as any;
 
 		if (!args || typeof args !== "object") {
@@ -260,7 +261,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					throw new Error("Missing required fields: id, data");
 				}
 
-				const inputData = submit ? data + "\r" : data;
+				const inputData = submit ? `${data}\r` : data;
 				await processManager.sendInput(id, inputData);
 
 				return {
