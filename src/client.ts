@@ -3,7 +3,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as readline from "node:readline";
-import { type SocketMessage } from "./socket-protocol.js";
+import type { SocketMessage } from "./socket-protocol.js";
 
 export class TerminalClient {
 	private socket?: net.Socket;
@@ -24,17 +24,17 @@ export class TerminalClient {
 
 		const files = fs.readdirSync(this.sessionsDir);
 		const sessions = files
-			.filter(f => f.endsWith(".sock"))
-			.map(f => {
+			.filter((f) => f.endsWith(".sock"))
+			.map((f) => {
 				const parts = f.replace(".sock", "").split("-");
 				const id = parts[parts.length - 1];
 				const name = parts.slice(0, -1).join("-") || "unnamed";
 				const socketPath = path.join(this.sessionsDir, f);
-				
+
 				// Check if socket is still active
 				const exists = fs.existsSync(socketPath);
 				const stats = exists ? fs.statSync(socketPath) : null;
-				
+
 				return {
 					name,
 					id: `proc-${id}`,
@@ -43,7 +43,7 @@ export class TerminalClient {
 					created: stats?.birthtime,
 				};
 			})
-			.filter(s => s.active);
+			.filter((s) => s.active);
 
 		if (sessions.length === 0) {
 			console.log("No active sessions");
@@ -142,7 +142,8 @@ export class TerminalClient {
 		// Handle input
 		this.stdin.on("data", (data) => {
 			// Check for Ctrl+Q to detach
-			if (data[0] === 0x11) { // Ctrl+Q
+			if (data[0] === 0x11) {
+				// Ctrl+Q
 				this.detach();
 				return;
 			}
@@ -241,7 +242,7 @@ export class TerminalClient {
 	 */
 	private detach(): void {
 		console.log("\n[Detaching...]");
-		
+
 		if (this.socket && !this.socket.destroyed) {
 			const message: SocketMessage = {
 				type: "detach",
@@ -252,7 +253,7 @@ export class TerminalClient {
 			this.socket.write(JSON.stringify(message) + "\n");
 			this.socket.end();
 		}
-		
+
 		this.cleanup();
 	}
 

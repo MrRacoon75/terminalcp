@@ -2,8 +2,8 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { ProcessManager } from "./process-manager.js";
 import { TerminalClient } from "./client.js";
+import { ProcessManager } from "./process-manager.js";
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -12,7 +12,7 @@ const args = process.argv.slice(2);
 if (args.length > 0) {
 	// CLI mode
 	const client = new TerminalClient();
-	
+
 	if (args[0] === "ls" || args[0] === "list") {
 		// List sessions
 		client.listSessions().then(() => process.exit(0));
@@ -53,9 +53,9 @@ if (args.length > 0) {
 	// Define the terminal tool
 	server.setRequestHandler(ListToolsRequestSchema, async () => ({
 		tools: [
-		{
-			name: "terminal",
-			description: `Control background processes with virtual terminals. IMPORTANT: Always clean up processes with "stop" action when done.
+			{
+				name: "terminal",
+				description: `Control background processes with virtual terminals. IMPORTANT: Always clean up processes with "stop" action when done.
 
 Examples:
   Start dev server: {"action": "start", "command": "npm run dev", "cwd": "/path/to/project"}
@@ -83,195 +83,202 @@ Interactive examples:
   LLDB: start "lldb ./app" → stdin "run" with submit: true → stdout
 
 Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolute paths.`,
-			inputSchema: {
-				type: "object",
-				properties: {
-					args: {
-						type: "object",
-						properties: {
-							action: {
-								type: "string",
-								enum: ["start", "stop", "stdout", "stdin", "list", "stream"],
-								description: "The action to perform",
+				inputSchema: {
+					type: "object",
+					properties: {
+						args: {
+							type: "object",
+							properties: {
+								action: {
+									type: "string",
+									enum: ["start", "stop", "stdout", "stdin", "list", "stream"],
+									description: "The action to perform",
+								},
+								command: {
+									type: "string",
+									description: "Command to execute (required for 'start' action)",
+								},
+								cwd: {
+									type: "string",
+									description: "Working directory for the process (optional for 'start' action)",
+								},
+								name: {
+									type: "string",
+									description: "Human-readable name for the session (optional for 'start' action)",
+								},
+								id: {
+									type: "string",
+									description: "Process ID (required for 'stop', 'stdout', 'stdin', 'stream' actions)",
+								},
+								data: {
+									type: "string",
+									description: "Data to send to stdin (required for 'stdin' action)",
+								},
+								submit: {
+									type: "boolean",
+									description:
+										"Automatically append Enter key (\\r) to the input (optional, defaults to false)",
+								},
+								lines: {
+									type: "number",
+									description: "Number of lines to retrieve (optional for 'stdout' action)",
+								},
+								since_last: {
+									type: "boolean",
+									description:
+										"Only return output since last stream read (optional for 'stream' action, defaults to false)",
+								},
+								strip_ansi: {
+									type: "boolean",
+									description:
+										"Strip ANSI escape codes from output (optional for 'stream' action, defaults to true)",
+								},
 							},
-							command: {
-								type: "string",
-								description: "Command to execute (required for 'start' action)",
-							},
-							cwd: {
-								type: "string",
-								description: "Working directory for the process (optional for 'start' action)",
-							},
-							name: {
-								type: "string",
-								description: "Human-readable name for the session (optional for 'start' action)",
-							},
-							id: {
-								type: "string",
-								description: "Process ID (required for 'stop', 'stdout', 'stdin', 'stream' actions)",
-							},
-							data: {
-								type: "string",
-								description: "Data to send to stdin (required for 'stdin' action)",
-							},
-							submit: {
-								type: "boolean",
-								description: "Automatically append Enter key (\\r) to the input (optional, defaults to false)",
-							},
-							lines: {
-								type: "number",
-								description: "Number of lines to retrieve (optional for 'stdout' action)",
-							},
-							since_last: {
-								type: "boolean",
-								description: "Only return output since last stream read (optional for 'stream' action, defaults to false)",
-							},
-							strip_ansi: {
-								type: "boolean",
-								description: "Strip ANSI escape codes from output (optional for 'stream' action, defaults to true)",
-							},
+							required: ["action"],
+							additionalProperties: false,
 						},
-						required: ["action"],
-						additionalProperties: false,
 					},
+					required: ["args"],
+					additionalProperties: false,
 				},
-				required: ["args"],
-				additionalProperties: false,
 			},
-		},
 		],
 	}));
 
 	// Handle terminal tool calls
 	server.setRequestHandler(CallToolRequestSchema, async (request) => {
-	if (request.params.name !== "terminal") {
-		throw new Error(`Unknown tool: ${request.params.name}`);
-	}
+		if (request.params.name !== "terminal") {
+			throw new Error(`Unknown tool: ${request.params.name}`);
+		}
 
-	const args = request.params.arguments?.args as any;
+		const args = request.params.arguments?.args as any;
 
-	if (!args || typeof args !== "object") {
-		throw new Error("Invalid arguments: expected JSON object");
-	}
+		if (!args || typeof args !== "object") {
+			throw new Error("Invalid arguments: expected JSON object");
+		}
 
-	const { action } = args;
+		const { action } = args;
 
-	switch (action) {
-		case "start": {
-			const { command, cwd, name } = args;
-			if (!command) {
-				throw new Error("Missing required field: command");
+		switch (action) {
+			case "start": {
+				const { command, cwd, name } = args;
+				if (!command) {
+					throw new Error("Missing required field: command");
+				}
+
+				const id = await processManager.start(command, { cwd, name });
+				const processes = processManager.listProcesses();
+				const processInfo = processes.find((p) => p.id === id);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									id,
+									name: processInfo?.name,
+									command,
+									status: "started",
+									cwd: cwd || process.cwd(),
+									socketPath: processInfo?.socketPath,
+								},
+								null,
+								2,
+							),
+						},
+					],
+				};
 			}
 
-			const id = await processManager.start(command, { cwd, name });
-			const processes = processManager.listProcesses();
-			const processInfo = processes.find(p => p.id === id);
+			case "stop": {
+				const { id } = args;
+				if (!id) {
+					throw new Error("Missing required field: id");
+				}
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: JSON.stringify({ 
-							id, 
-							name: processInfo?.name,
-							command, 
-							status: "started", 
-							cwd: cwd || process.cwd(),
-							socketPath: processInfo?.socketPath 
-						}, null, 2),
-					},
-				],
-			};
-		}
+				await processManager.stop(id);
 
-		case "stop": {
-			const { id } = args;
-			if (!id) {
-				throw new Error("Missing required field: id");
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ id, status: "stopped" }, null, 2),
+						},
+					],
+				};
 			}
 
-			await processManager.stop(id);
+			case "stdout": {
+				const { id, lines } = args;
+				if (!id) {
+					throw new Error("Missing required field: id");
+				}
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: JSON.stringify({ id, status: "stopped" }, null, 2),
-					},
-				],
-			};
-		}
+				const output = await processManager.getOutput(id, { lines });
 
-		case "stdout": {
-			const { id, lines } = args;
-			if (!id) {
-				throw new Error("Missing required field: id");
+				return {
+					content: [
+						{
+							type: "text",
+							text: output,
+						},
+					],
+				};
 			}
 
-			const output = await processManager.getOutput(id, { lines });
+			case "stdin": {
+				const { id, data, submit } = args;
+				if (!id || data === undefined) {
+					throw new Error("Missing required fields: id, data");
+				}
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: output,
-					},
-				],
-			};
-		}
+				const inputData = submit ? data + "\r" : data;
+				await processManager.sendInput(id, inputData);
 
-		case "stdin": {
-			const { id, data, submit } = args;
-			if (!id || data === undefined) {
-				throw new Error("Missing required fields: id, data");
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ id, status: "input sent" }, null, 2),
+						},
+					],
+				};
 			}
 
-			const inputData = submit ? data + "\r" : data;
-			await processManager.sendInput(id, inputData);
+			case "list": {
+				const list = processManager.listProcesses();
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: JSON.stringify({ id, status: "input sent" }, null, 2),
-					},
-				],
-			};
-		}
-
-		case "list": {
-			const list = processManager.listProcesses();
-
-			return {
-				content: [
-					{
-						type: "text",
-						text: JSON.stringify(list, null, 2),
-					},
-				],
-			};
-		}
-
-		case "stream": {
-			const { id, since_last, strip_ansi } = args;
-			if (!id) {
-				throw new Error("Missing required field: id");
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(list, null, 2),
+						},
+					],
+				};
 			}
 
-			const output = await processManager.getStream(id, { since_last, strip_ansi });
+			case "stream": {
+				const { id, since_last, strip_ansi } = args;
+				if (!id) {
+					throw new Error("Missing required field: id");
+				}
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: output,
-					},
-				],
-			};
-		}
+				const output = await processManager.getStream(id, { since_last, strip_ansi });
 
-		default:
-			throw new Error(`Unknown action: ${action}`);
+				return {
+					content: [
+						{
+							type: "text",
+							text: output,
+						},
+					],
+				};
+			}
+
+			default:
+				throw new Error(`Unknown action: ${action}`);
 		}
 	});
 

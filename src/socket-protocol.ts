@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import * as net from "node:net";
+import type * as net from "node:net";
 
 export interface SocketMessage {
 	type: "output" | "input" | "resize" | "attach" | "detach" | "error";
@@ -28,7 +28,7 @@ export interface ResizePayload {
 
 export class SocketProtocol extends EventEmitter {
 	private clients = new Map<string, net.Socket>();
-	
+
 	constructor() {
 		super();
 	}
@@ -38,7 +38,7 @@ export class SocketProtocol extends EventEmitter {
 	 */
 	addClient(clientId: string, socket: net.Socket): void {
 		this.clients.set(clientId, socket);
-		
+
 		// Set up socket event handlers
 		socket.on("data", (data) => {
 			const messages = this.parseMessages(data.toString());
@@ -97,7 +97,7 @@ export class SocketProtocol extends EventEmitter {
 	private parseMessages(data: string): SocketMessage[] {
 		const messages: SocketMessage[] = [];
 		const lines = data.split("\n").filter((line) => line.trim());
-		
+
 		for (const line of lines) {
 			try {
 				const message = JSON.parse(line);
@@ -106,7 +106,7 @@ export class SocketProtocol extends EventEmitter {
 				console.error("Failed to parse message:", line, err);
 			}
 		}
-		
+
 		return messages;
 	}
 

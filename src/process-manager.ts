@@ -7,7 +7,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import xterm from "@xterm/headless";
 import * as pty from "node-pty";
-import { SocketProtocol, type SocketMessage } from "./socket-protocol.js";
+import { type SocketMessage, SocketProtocol } from "./socket-protocol.js";
 
 const Terminal = xterm.Terminal;
 
@@ -71,19 +71,19 @@ export class ProcessManager {
 	private async isSocketAlive(socketPath: string): Promise<boolean> {
 		return new Promise((resolve) => {
 			const socket = net.createConnection(socketPath);
-			
+
 			const timeout = setTimeout(() => {
 				socket.destroy();
 				resolve(false);
 			}, 100); // 100ms timeout
-			
-			socket.once('connect', () => {
+
+			socket.once("connect", () => {
 				clearTimeout(timeout);
 				socket.end();
 				resolve(true);
 			});
-			
-			socket.once('error', () => {
+
+			socket.once("error", () => {
 				clearTimeout(timeout);
 				resolve(false);
 			});
@@ -99,18 +99,18 @@ export class ProcessManager {
 		}
 
 		const files = fs.readdirSync(this.sessionsDir);
-		const socketFiles = files.filter(f => f.endsWith(".sock"));
-		
+		const socketFiles = files.filter((f) => f.endsWith(".sock"));
+
 		if (socketFiles.length === 0) {
 			return;
 		}
 
 		let cleaned = 0;
-		
+
 		for (const file of socketFiles) {
 			const socketPath = path.join(this.sessionsDir, file);
 			const alive = await this.isSocketAlive(socketPath);
-			
+
 			if (!alive) {
 				try {
 					fs.unlinkSync(socketPath);
@@ -121,7 +121,7 @@ export class ProcessManager {
 				}
 			}
 		}
-		
+
 		if (cleaned > 0) {
 			console.error(`Removed ${cleaned} orphaned socket(s)`);
 		}
@@ -211,7 +211,7 @@ export class ProcessManager {
 	 */
 	private async setupSocketServer(processEntry: ManagedProcess): Promise<void> {
 		const socketPath = path.join(this.sessionsDir, `${processEntry.name}-${processEntry.id}.sock`);
-		
+
 		// Remove existing socket file if it exists
 		if (fs.existsSync(socketPath)) {
 			fs.unlinkSync(socketPath);
@@ -221,9 +221,9 @@ export class ProcessManager {
 		const server = net.createServer((socket) => {
 			const clientId = `client-${crypto.randomBytes(6).toString("hex")}`;
 			console.error(`Client ${clientId} connected to process ${processEntry.id}`);
-			
+
 			socketProtocol.addClient(clientId, socket);
-			
+
 			// Send initial attach response with terminal size
 			socketProtocol.sendToClient(clientId, {
 				type: "attach",
@@ -246,7 +246,7 @@ export class ProcessManager {
 						processEntry.process.write(message.payload.data);
 					});
 					break;
-				case "resize":
+				case "resize": {
 					// Resize PTY and terminal
 					const { cols, rows } = message.payload;
 					processEntry.process.resize(cols, rows);
@@ -257,6 +257,7 @@ export class ProcessManager {
 						payload: { cols, rows },
 					});
 					break;
+				}
 			}
 		});
 
@@ -369,10 +370,7 @@ export class ProcessManager {
 	/**
 	 * Get raw stream output (with ANSI stripping by default)
 	 */
-	async getStream(
-		id: string,
-		options?: { since_last?: boolean; strip_ansi?: boolean },
-	): Promise<string> {
+	async getStream(id: string, options?: { since_last?: boolean; strip_ansi?: boolean }): Promise<string> {
 		const proc = this.processes.get(id);
 		if (!proc) {
 			throw new Error(`Process not found: ${id}`);
@@ -449,4 +447,3 @@ export class ProcessManager {
 		this.processes.clear();
 	}
 }
-
