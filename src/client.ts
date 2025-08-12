@@ -71,9 +71,9 @@ export class TerminalClient {
 			process.exit(1);
 		}
 
-		console.log(`Attaching to session at ${socketPath}`);
-		console.log("Press Ctrl+Q to detach");
-		console.log();
+		console.error(`Attaching to session at ${socketPath}`);
+		console.error("Press Ctrl+Q to detach");
+		console.error("");
 
 		await this.connect(socketPath);
 	}
@@ -190,7 +190,7 @@ export class TerminalClient {
 		});
 
 		this.socket.on("close", () => {
-			console.log("\n[Session closed]");
+			console.error("\n[Session closed]");
 			this.cleanup();
 		});
 	}
@@ -206,7 +206,7 @@ export class TerminalClient {
 				break;
 			case "attach":
 				// Initial attach confirmation
-				console.log(`[Attached to ${message.payload.name} (${message.payload.processId})]`);
+				console.error(`[Attached to ${message.payload.name} (${message.payload.processId})]`);
 				break;
 			case "resize":
 				// Another client resized the terminal
@@ -240,7 +240,7 @@ export class TerminalClient {
 	 * Detach from session
 	 */
 	private detach(): void {
-		console.log("\n[Detaching...]");
+		console.error("\n[Detaching...]");
 
 		if (this.socket && !this.socket.destroyed) {
 			const message: SocketMessage = {
@@ -265,6 +265,18 @@ export class TerminalClient {
 			this.isRawMode = false;
 		}
 		this.stdin.pause();
+
+		// Reset terminal to clear any lingering state (mouse tracking, alternate screen, etc.)
+		// These escape sequences will:
+		// - \x1b[?1000l: Disable X10 mouse tracking
+		// - \x1b[?1002l: Disable cell motion mouse tracking
+		// - \x1b[?1003l: Disable all motion mouse tracking
+		// - \x1b[?1006l: Disable SGR mouse mode
+		// - \x1b[?47l: Switch back to normal screen buffer
+		// - \x1b[?1049l: Disable alternate screen buffer
+		// - \x1bc: Full terminal reset
+		this.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?47l\x1b[?1049l\x1bc");
+
 		process.exit(0);
 	}
 }

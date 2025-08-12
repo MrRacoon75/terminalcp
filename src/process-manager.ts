@@ -148,7 +148,12 @@ export class ProcessManager {
 			cols: 80,
 			rows: 24,
 			cwd: options?.cwd || process.cwd(),
-			env: process.env as { [key: string]: string },
+			env: {
+				...process.env,
+				TERM: "xterm-256color",
+				COLORTERM: "truecolor",
+				FORCE_COLOR: "1",
+			} as { [key: string]: string },
 		});
 
 		// Create process entry
@@ -170,13 +175,16 @@ export class ProcessManager {
 
 		// Capture output from PTY
 		proc.onData((data) => {
+			// Store the raw output exactly as received
 			processEntry.rawOutput += data;
+
 			// Queue terminal write to prevent race conditions
 			processEntry.terminalWriteQueue.enqueue(async () => {
 				await new Promise<void>((resolve) => {
 					terminal.write(data, () => resolve());
 				});
 			});
+
 			// Broadcast to socket clients
 			if (processEntry.socketProtocol) {
 				processEntry.socketProtocol.broadcast({
@@ -237,7 +245,7 @@ export class ProcessManager {
 			});
 
 			// Send the raw output history to the new client
-			// This includes all diagnostic messages, stderr, etc.
+			// This includes all diagnostic messages, stderr, etc. with ANSI colors preserved
 			if (processEntry.rawOutput) {
 				socketProtocol.sendToClient(clientId, {
 					type: "output",

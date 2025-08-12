@@ -72,7 +72,7 @@ Examples:
   List processes: {"action": "list"}
 
 Output modes:
-  - stdout: Returns rendered terminal screen with scrollback (use for TUIs, REPLs, debuggers)
+  - stdout: Returns rendered terminal screen with scrollback (use for TUIs, REPLs, debuggers). If scrollback > viewport, the TUI may handle scrolling - try sending Page Up/Down (\\u001b[5~ / \\u001b[6~) via stdin to navigate
   - stream: Returns raw output with ANSI codes stripped by default (use for logs, builds, incremental monitoring). Set strip_ansi: false to keep ANSI codes
 
 Interactive CLI usage:
