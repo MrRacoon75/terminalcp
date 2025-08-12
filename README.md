@@ -149,7 +149,7 @@ Then use this config:
 ### Build Process Monitoring
 ```json
 {"action": "start", "command": "npm run build"}
-{"action": "stream", "id": "proc-456", "since_last": true}  // Get new output only
+{"action": "stream", "id": "proc-456", "since_last": true}  // Get new output only, ANSI codes stripped by default
 // ... wait a bit ...
 {"action": "stream", "id": "proc-456", "since_last": true}  // Get updates since last check
 ```
@@ -157,8 +157,8 @@ Then use this config:
 ### Server Log Monitoring
 ```json
 {"action": "start", "command": "npm run dev"}
-{"action": "stream", "id": "proc-123", "since_last": true, "strip_ansi": true}
-// Returns clean text without color codes, only new log entries
+{"action": "stream", "id": "proc-123", "since_last": true}  // Clean text without color codes by default
+{"action": "stream", "id": "proc-123", "since_last": true, "strip_ansi": false}  // Keep ANSI codes if needed
 ```
 
 ## Important Usage Notes
@@ -216,17 +216,18 @@ Use `stdout` for:
 {
   "action": "stream",
   "id": "proc-abc123",
-  "since_last": true,  // Optional: only new output since last read
-  "strip_ansi": true   // Optional: remove ANSI escape codes
+  "since_last": true,  // Optional: only new output since last read (default: false)
+  "strip_ansi": false  // Optional: keep ANSI escape codes (default: true, codes are stripped)
 }
 ```
-**Returns**: Raw output stream with all ANSI sequences (or stripped if requested)
+**Returns**: Raw output stream with ANSI codes stripped by default (set strip_ansi: false to keep them)
 
 Use `stream` for:
 - Incremental log monitoring (with `since_last: true`)
 - Build processes and compilation output
 - High-volume streaming data
-- When you need exact bytes as sent
+- When you need clean text output without terminal control codes
+- Set `strip_ansi: false` only if you need the raw ANSI sequences
 
 #### Send input to a process
 ```json
@@ -276,6 +277,66 @@ npm run build
 # Run checks (linting, formatting, type checking)
 npm run check
 ```
+
+## Comparison with screen/tmux
+
+### Can you use screen?
+
+Technically yes, but it's significantly more complex and limited. Here's how Claude would try to emulate terminalcp with screen:
+
+#### Starting a process
+```bash
+# terminalcp
+{"action": "start", "command": "lldb myapp"}
+# Returns: {"id": "proc-123", "status": "started"}
+
+# screen equivalent
+screen -dmS session-123 -L lldb myapp
+# No feedback on success/failure
+```
+
+#### Sending input
+```bash
+# terminalcp
+{"action": "stdin", "id": "proc-123", "data": "break main", "submit": true}
+
+# screen equivalent
+screen -S session-123 -X stuff $'break main\n'
+# No confirmation the command was received
+```
+
+#### Getting output
+```bash
+# terminalcp
+{"action": "stdout", "id": "proc-123"}
+# Returns: Clean, rendered terminal output
+
+# screen equivalent
+screen -S session-123 -X hardcopy /tmp/output.txt
+cat /tmp/output.txt
+# Returns: Raw terminal buffer with ANSI codes, timing issues
+```
+
+#### Monitoring changes
+```bash
+# terminalcp
+{"action": "stream", "id": "proc-123", "since_last": true}
+# Returns: Only new output since last check
+
+# screen equivalent
+# No built-in way - must diff files or parse screenlog manually
+tail -f screenlog.0 | grep "pattern"  # Crude approximation
+```
+
+### Key limitations of screen/tmux
+
+1. **No structured responses** - Everything is text in files or stdout
+2. **No reliable output retrieval** - Must use hardcopy or logging with timing guesswork
+3. **ANSI escape sequence pollution** - Output full of terminal control codes clogging up the agent's context
+4. **No incremental reading** - Can't easily get "what's new since last check"
+6. **No process lifecycle info** - Don't know when processes exit or their exit codes
+7. **Timing issues** - Must guess when commands complete with sleep
+8. **Not great for modern TUIs** - Tools like Claude CLI that constantly redraw their interface produce massive amounts of escape sequences in screen logs, making output practically unusable
 
 ## License
 

@@ -192,7 +192,7 @@ export class ProcessManager {
 	}
 
 	/**
-	 * Get raw stream output (with optional ANSI stripping)
+	 * Get raw stream output (with ANSI stripping by default)
 	 */
 	async getStream(
 		id: string,
@@ -214,8 +214,8 @@ export class ProcessManager {
 			output = proc.rawOutput;
 		}
 
-		// Strip ANSI codes if requested
-		if (options?.strip_ansi && output) {
+		// Strip ANSI codes by default (can be disabled by setting strip_ansi: false)
+		if (options?.strip_ansi !== false && output) {
 			output = stripVTControlCharacters(output);
 		}
 

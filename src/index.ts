@@ -34,12 +34,12 @@ Examples:
   Manual Enter key: {"action": "stdin", "id": "proc-123", "data": "\\r"}
   Stop process: {"action": "stop", "id": "proc-abc123"}
   Get terminal screen: {"action": "stdout", "id": "proc-abc123", "lines": 50}
-  Get raw stream (for logs/builds): {"action": "stream", "id": "proc-abc123", "since_last": true, "strip_ansi": true}
+  Get raw stream (for logs/builds): {"action": "stream", "id": "proc-abc123", "since_last": true}
   List processes: {"action": "list"}
 
 Output modes:
   - stdout: Returns rendered terminal screen with scrollback (use for TUIs, REPLs, debuggers)
-  - stream: Returns raw output with ANSI codes (use for logs, builds, incremental monitoring)
+  - stream: Returns raw output with ANSI codes stripped by default (use for logs, builds, incremental monitoring). Set strip_ansi: false to keep ANSI codes
 
 Interactive CLI usage:
   - Use submit: true to automatically append Enter key (\\r) to your input
@@ -92,7 +92,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							},
 							strip_ansi: {
 								type: "boolean",
-								description: "Strip ANSI escape codes from output (optional for 'stream' action, defaults to false)",
+								description: "Strip ANSI escape codes from output (optional for 'stream' action, defaults to true)",
 							},
 						},
 						required: ["action"],
