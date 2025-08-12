@@ -3,24 +3,56 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ProcessManager } from "./process-manager.js";
+import { TerminalClient } from "./client.js";
 
-const processManager = new ProcessManager();
+// Parse CLI arguments
+const args = process.argv.slice(2);
 
-const server = new Server(
-	{
-		name: "terminalcp",
-		version: "1.0.0",
-	},
-	{
-		capabilities: {
-			tools: {},
+// Check if running in CLI mode
+if (args.length > 0) {
+	// CLI mode
+	const client = new TerminalClient();
+	
+	if (args[0] === "ls" || args[0] === "list") {
+		// List sessions
+		client.listSessions().then(() => process.exit(0));
+	} else if (args[0] === "attach") {
+		// Attach to session
+		if (!args[1]) {
+			console.error("Usage: terminalcp attach <name|id>");
+			process.exit(1);
+		}
+		client.attach(args[1]).catch(() => process.exit(1));
+	} else {
+		// Try to attach to the first argument as a session name/id
+		client.attach(args[0]).catch(() => {
+			console.error(`Unknown command or session: ${args[0]}`);
+			console.error("Usage:");
+			console.error("  terminalcp              - Start MCP server");
+			console.error("  terminalcp ls           - List active sessions");
+			console.error("  terminalcp attach <id>  - Attach to a session");
+			process.exit(1);
+		});
+	}
+} else {
+	// MCP server mode
+	const processManager = new ProcessManager();
+
+	const server = new Server(
+		{
+			name: "terminalcp",
+			version: "1.0.0",
 		},
-	},
-);
+		{
+			capabilities: {
+				tools: {},
+			},
+		},
+	);
 
-// Define the terminal tool
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-	tools: [
+	// Define the terminal tool
+	server.setRequestHandler(ListToolsRequestSchema, async () => ({
+		tools: [
 		{
 			name: "terminal",
 			description: `Control background processes with virtual terminals. IMPORTANT: Always clean up processes with "stop" action when done.
@@ -70,6 +102,10 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 								type: "string",
 								description: "Working directory for the process (optional for 'start' action)",
 							},
+							name: {
+								type: "string",
+								description: "Human-readable name for the session (optional for 'start' action)",
+							},
 							id: {
 								type: "string",
 								description: "Process ID (required for 'stop', 'stdout', 'stdin', 'stream' actions)",
@@ -103,11 +139,11 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 				additionalProperties: false,
 			},
 		},
-	],
-}));
+		],
+	}));
 
-// Handle terminal tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+	// Handle terminal tool calls
+	server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	if (request.params.name !== "terminal") {
 		throw new Error(`Unknown tool: ${request.params.name}`);
 	}
@@ -122,18 +158,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 	switch (action) {
 		case "start": {
-			const { command, cwd } = args;
+			const { command, cwd, name } = args;
 			if (!command) {
 				throw new Error("Missing required field: command");
 			}
 
-			const id = await processManager.start(command, cwd);
+			const id = await processManager.start(command, { cwd, name });
+			const processes = processManager.listProcesses();
+			const processInfo = processes.find(p => p.id === id);
 
 			return {
 				content: [
 					{
 						type: "text",
-						text: JSON.stringify({ id, command, status: "started", cwd: cwd || process.cwd() }, null, 2),
+						text: JSON.stringify({ 
+							id, 
+							name: processInfo?.name,
+							command, 
+							status: "started", 
+							cwd: cwd || process.cwd(),
+							socketPath: processInfo?.socketPath 
+						}, null, 2),
 					},
 				],
 			};
@@ -227,24 +272,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 		default:
 			throw new Error(`Unknown action: ${action}`);
+		}
+	});
+
+	// Cleanup on exit
+	process.on("SIGINT", async () => {
+		console.error("Shutting down terminalcp server...");
+		await processManager.stopAll();
+		process.exit(0);
+	});
+
+	// Start the server
+	async function main() {
+		const transport = new StdioServerTransport();
+		await server.connect(transport);
+		console.error("terminalcp MCP server running on stdio");
 	}
-});
 
-// Cleanup on exit
-process.on("SIGINT", async () => {
-	console.error("Shutting down terminalcp server...");
-	await processManager.stopAll();
-	process.exit(0);
-});
-
-// Start the server
-async function main() {
-	const transport = new StdioServerTransport();
-	await server.connect(transport);
-	console.error("terminalcp MCP server running on stdio");
+	main().catch((error) => {
+		console.error("Fatal error:", error);
+		process.exit(1);
+	});
 }
-
-main().catch((error) => {
-	console.error("Fatal error:", error);
-	process.exit(1);
-});

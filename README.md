@@ -8,6 +8,8 @@ Let AI agents control interactive command-line tools like a human would.
 
 terminalcp enables AI agents to spawn and interact with any CLI tool in real-time - from debuggers like LLDB and GDB to other AI coding assistants like Claude Code, Gemini CLI, and Codex. Think of it as Playwright for the terminal: your agent can start processes, send keystrokes, read output, and maintain full interactive sessions with tools that normally require human input.
 
+**NEW: Socket-based attachment** - Users can now attach to AI-spawned processes from their own terminal, similar to screen/tmux. Watch what the AI is doing in real-time or jump in to help!
+
 Key capabilities:
 - Debug code step-by-step using command-line debuggers (LLDB, GDB, pdb)
 - Collaborate with other AI tools by running them as subprocesses
@@ -168,6 +170,52 @@ Then use this config:
 - **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
 - **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
 
+## Attaching to AI-Spawned Sessions (NEW!)
+
+terminalcp now creates Unix domain sockets for each spawned process, allowing you to attach from your terminal - just like screen or tmux!
+
+### How to Use
+
+1. **AI spawns a process with a name**:
+```json
+{"action": "start", "command": "python3 -i", "name": "python-debug"}
+```
+
+2. **List active sessions from your terminal**:
+```bash
+terminalcp ls
+# Output:
+# Active sessions:
+# ================
+#   python-debug (proc-abc123)
+#     Socket: /Users/you/.terminalcp/sessions/python-debug-proc-abc123.sock
+#     Started: 1/15/2025, 10:30:45 AM
+```
+
+3. **Attach to the session**:
+```bash
+terminalcp attach python-debug
+# OR use the process ID:
+terminalcp attach proc-abc123
+```
+
+4. **Interact with the process**:
+- Type commands as normal
+- Terminal resizing is automatically synchronized
+- Press **Ctrl+Q** to detach (session continues running)
+- Multiple users can attach to the same session
+
+### Use Cases
+
+- **Debugging**: Watch what the AI is doing in real-time
+- **Collaboration**: Jump in when the AI needs help
+- **Monitoring**: Observe long-running processes
+- **Teaching**: See how the AI solves problems step-by-step
+
+### Socket Files
+
+Sessions are stored as Unix domain sockets in `~/.terminalcp/sessions/`. Each socket is named `{name}-{id}.sock` for easy identification. Sockets are automatically cleaned up when processes exit.
+
 ## How it works
 
 terminalcp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes, each running in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
@@ -181,10 +229,11 @@ The terminal tool accepts a JSON object with different action types:
 {
   "action": "start",
   "command": "npm run dev",
-  "cwd": "/path/to/project"  // optional
+  "cwd": "/path/to/project",  // optional
+  "name": "dev-server"  // optional: human-readable name for socket attachment
 }
 ```
-**Returns**: Process ID, command, status, and working directory
+**Returns**: Process ID, name, command, status, working directory, and socket path
 
 #### Stop a process
 ```json

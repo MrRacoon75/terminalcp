@@ -1,8 +1,13 @@
 import crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as net from "node:net";
+import * as os from "node:os";
+import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import xterm from "@xterm/headless";
 import * as pty from "node-pty";
+import { SocketProtocol, type SocketMessage } from "./socket-protocol.js";
 
 const Terminal = xterm.Terminal;
 
@@ -24,6 +29,7 @@ class WriteQueue {
 
 export interface ManagedProcess {
 	id: string;
+	name: string;
 	command: string;
 	process: pty.IPty;
 	terminal: XtermTerminalType;
@@ -32,6 +38,9 @@ export interface ManagedProcess {
 	lastStreamReadPosition: number;
 	terminalWriteQueue: WriteQueue;
 	ptyWriteQueue: WriteQueue;
+	socketPath?: string;
+	socketServer?: net.Server;
+	socketProtocol?: SocketProtocol;
 }
 
 export interface ProcessOutput {
@@ -41,12 +50,25 @@ export interface ProcessOutput {
 
 export class ProcessManager {
 	private processes = new Map<string, ManagedProcess>();
+	private sessionsDir = path.join(os.homedir(), ".terminalcp", "sessions");
+
+	constructor() {
+		// Ensure sessions directory exists
+		this.ensureSessionsDir();
+	}
+
+	private ensureSessionsDir(): void {
+		if (!fs.existsSync(this.sessionsDir)) {
+			fs.mkdirSync(this.sessionsDir, { recursive: true });
+		}
+	}
 
 	/**
 	 * Start a new process with virtual terminal
 	 */
-	async start(command: string, cwd?: string): Promise<string> {
+	async start(command: string, options?: { cwd?: string; name?: string }): Promise<string> {
 		const id = `proc-${crypto.randomBytes(6).toString("hex")}`;
+		const name = options?.name || command.split(" ")[0].split("/").pop() || "unnamed";
 
 		const terminal = new Terminal({
 			cols: 80,
@@ -61,13 +83,14 @@ export class ProcessManager {
 			name: "xterm-256color",
 			cols: 80,
 			rows: 24,
-			cwd: cwd || process.cwd(),
+			cwd: options?.cwd || process.cwd(),
 			env: process.env as { [key: string]: string },
 		});
 
 		// Create process entry
 		const processEntry: ManagedProcess = {
 			id,
+			name,
 			command,
 			process: proc,
 			terminal,
@@ -78,6 +101,9 @@ export class ProcessManager {
 			ptyWriteQueue: new WriteQueue(),
 		};
 
+		// Set up socket server for this process
+		await this.setupSocketServer(processEntry);
+
 		// Capture output from PTY
 		proc.onData((data) => {
 			processEntry.rawOutput += data;
@@ -87,6 +113,13 @@ export class ProcessManager {
 					terminal.write(data, () => resolve());
 				});
 			});
+			// Broadcast to socket clients
+			if (processEntry.socketProtocol) {
+				processEntry.socketProtocol.broadcast({
+					type: "output",
+					payload: { data },
+				});
+			}
 		});
 
 		// Handle process exit
@@ -110,12 +143,90 @@ export class ProcessManager {
 	}
 
 	/**
+	 * Set up socket server for a process
+	 */
+	private async setupSocketServer(processEntry: ManagedProcess): Promise<void> {
+		const socketPath = path.join(this.sessionsDir, `${processEntry.name}-${processEntry.id}.sock`);
+		
+		// Remove existing socket file if it exists
+		if (fs.existsSync(socketPath)) {
+			fs.unlinkSync(socketPath);
+		}
+
+		const socketProtocol = new SocketProtocol();
+		const server = net.createServer((socket) => {
+			const clientId = `client-${crypto.randomBytes(6).toString("hex")}`;
+			console.error(`Client ${clientId} connected to process ${processEntry.id}`);
+			
+			socketProtocol.addClient(clientId, socket);
+			
+			// Send initial attach response with terminal size
+			socketProtocol.sendToClient(clientId, {
+				type: "attach",
+				clientId,
+				payload: {
+					cols: processEntry.terminal.cols,
+					rows: processEntry.terminal.rows,
+					processId: processEntry.id,
+					name: processEntry.name,
+				},
+			});
+		});
+
+		// Handle messages from socket clients
+		socketProtocol.on("message", (message: SocketMessage, clientId: string) => {
+			switch (message.type) {
+				case "input":
+					// Forward input to PTY
+					processEntry.ptyWriteQueue.enqueue(() => {
+						processEntry.process.write(message.payload.data);
+					});
+					break;
+				case "resize":
+					// Resize PTY and terminal
+					const { cols, rows } = message.payload;
+					processEntry.process.resize(cols, rows);
+					processEntry.terminal.resize(cols, rows);
+					// Broadcast resize to other clients
+					socketProtocol.broadcast({
+						type: "resize",
+						payload: { cols, rows },
+					});
+					break;
+			}
+		});
+
+		await new Promise<void>((resolve, reject) => {
+			server.listen(socketPath, () => {
+				console.error(`Socket server listening at ${socketPath}`);
+				resolve();
+			});
+			server.on("error", reject);
+		});
+
+		processEntry.socketPath = socketPath;
+		processEntry.socketServer = server;
+		processEntry.socketProtocol = socketProtocol;
+	}
+
+	/**
 	 * Stop a process
 	 */
 	async stop(id: string): Promise<void> {
 		const proc = this.processes.get(id);
 		if (!proc) {
 			throw new Error(`Process not found: ${id}`);
+		}
+
+		// Clean up socket server
+		if (proc.socketProtocol) {
+			proc.socketProtocol.disconnectAll();
+		}
+		if (proc.socketServer) {
+			proc.socketServer.close();
+		}
+		if (proc.socketPath && fs.existsSync(proc.socketPath)) {
+			fs.unlinkSync(proc.socketPath);
 		}
 
 		proc.process.kill();
@@ -227,17 +338,23 @@ export class ProcessManager {
 	 */
 	listProcesses(): Array<{
 		id: string;
+		name: string;
 		command: string;
 		startedAt: string;
 		running: boolean;
 		pid?: number;
+		socketPath?: string;
+		connectedClients: number;
 	}> {
 		return Array.from(this.processes.values()).map((p) => ({
 			id: p.id,
+			name: p.name,
 			command: p.command,
 			startedAt: p.startedAt.toISOString(),
 			running: p.process.pid !== undefined,
 			pid: p.process.pid,
+			socketPath: p.socketPath,
+			connectedClients: p.socketProtocol?.getClientCount() || 0,
 		}));
 	}
 
@@ -253,6 +370,16 @@ export class ProcessManager {
 	 */
 	async stopAll(): Promise<void> {
 		for (const proc of this.processes.values()) {
+			// Clean up socket server
+			if (proc.socketProtocol) {
+				proc.socketProtocol.disconnectAll();
+			}
+			if (proc.socketServer) {
+				proc.socketServer.close();
+			}
+			if (proc.socketPath && fs.existsSync(proc.socketPath)) {
+				fs.unlinkSync(proc.socketPath);
+			}
 			proc.process.kill();
 		}
 		this.processes.clear();
