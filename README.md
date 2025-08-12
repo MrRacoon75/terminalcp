@@ -8,14 +8,13 @@ Let AI agents control interactive command-line tools like a human would.
 
 terminalcp enables AI agents to spawn and interact with any CLI tool in real-time - from debuggers like LLDB and GDB to other AI coding assistants like Claude Code, Gemini CLI, and Codex. Think of it as Playwright for the terminal: your agent can start processes, send keystrokes, read output, and maintain full interactive sessions with tools that normally require human input.
 
-**NEW: Socket-based attachment** - Users can now attach to AI-spawned processes from their own terminal, similar to screen/tmux. Watch what the AI is doing in real-time or jump in to help!
-
 Key capabilities:
 - Debug code step-by-step using command-line debuggers (LLDB, GDB, pdb)
 - Collaborate with other AI tools by running them as subprocesses
 - Interact with REPLs (Python, Node, Ruby), database shells, and system monitors
 - Control any interactive CLI that expects human input
 - Run multiple processes simultaneously without blocking the agent
+- Users can attach to AI-spawned processes from their own terminal, similar to screen/tmux. Watch what the AI is doing in real-time or jump in to help!
 
 Two output modes for different use cases:
 - **Terminal mode (stdout)**: Returns the rendered screen with full scrollback - perfect for TUIs like vim, htop, or interactive debuggers where visual layout matters
@@ -170,9 +169,9 @@ Then use this config:
 - **Process cleanup**: Always stop processes when done with `{"action": "stop", "id": "proc-id"}`
 - **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
 
-## Attaching to AI-Spawned Sessions (NEW!)
+## Attaching to AI-Spawned Sessions
 
-terminalcp now creates Unix domain sockets for each spawned process, allowing you to attach from your terminal - just like screen or tmux!
+terminalcp creates Unix domain sockets for each spawned process, allowing you to attach from your terminal, just like screen or tmux.
 
 ### How to Use
 
