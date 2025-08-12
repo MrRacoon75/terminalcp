@@ -101,8 +101,8 @@ export class ProcessManager {
 					terminal.write(exitMsg, () => resolve());
 				});
 			});
-			// Remove the process from the map when it exits
-			this.processes.delete(id);
+			// Keep the process in the map so users can still query its output
+			// Users must explicitly call "stop" to clean up
 		});
 
 		this.processes.set(id, processEntry);
