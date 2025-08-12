@@ -55,11 +55,75 @@ export class ProcessManager {
 	constructor() {
 		// Ensure sessions directory exists
 		this.ensureSessionsDir();
+		// Clean up orphaned sockets on startup
+		this.cleanupOrphanedSockets();
 	}
 
 	private ensureSessionsDir(): void {
 		if (!fs.existsSync(this.sessionsDir)) {
 			fs.mkdirSync(this.sessionsDir, { recursive: true });
+		}
+	}
+
+	/**
+	 * Check if a socket is alive by trying to connect
+	 */
+	private async isSocketAlive(socketPath: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			const socket = net.createConnection(socketPath);
+			
+			const timeout = setTimeout(() => {
+				socket.destroy();
+				resolve(false);
+			}, 100); // 100ms timeout
+			
+			socket.once('connect', () => {
+				clearTimeout(timeout);
+				socket.end();
+				resolve(true);
+			});
+			
+			socket.once('error', () => {
+				clearTimeout(timeout);
+				resolve(false);
+			});
+		});
+	}
+
+	/**
+	 * Clean up orphaned socket files on startup
+	 */
+	private async cleanupOrphanedSockets(): Promise<void> {
+		if (!fs.existsSync(this.sessionsDir)) {
+			return;
+		}
+
+		const files = fs.readdirSync(this.sessionsDir);
+		const socketFiles = files.filter(f => f.endsWith(".sock"));
+		
+		if (socketFiles.length === 0) {
+			return;
+		}
+
+		let cleaned = 0;
+		
+		for (const file of socketFiles) {
+			const socketPath = path.join(this.sessionsDir, file);
+			const alive = await this.isSocketAlive(socketPath);
+			
+			if (!alive) {
+				try {
+					fs.unlinkSync(socketPath);
+					console.error(`Cleaned up orphaned socket: ${file}`);
+					cleaned++;
+				} catch (err) {
+					console.error(`Failed to remove orphaned socket ${file}: ${err}`);
+				}
+			}
+		}
+		
+		if (cleaned > 0) {
+			console.error(`Removed ${cleaned} orphaned socket(s)`);
 		}
 	}
 
