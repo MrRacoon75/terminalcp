@@ -218,7 +218,7 @@ export class ProcessManager {
 		}
 
 		const socketProtocol = new SocketProtocol();
-		const server = net.createServer((socket) => {
+		const server = net.createServer(async (socket) => {
 			const clientId = `client-${crypto.randomBytes(6).toString("hex")}`;
 			console.error(`Client ${clientId} connected to process ${processEntry.id}`);
 
@@ -235,6 +235,26 @@ export class ProcessManager {
 					name: processEntry.name,
 				},
 			});
+
+			// Send the current terminal buffer to the new client
+			await processEntry.terminalWriteQueue.drain();
+			const buffer = processEntry.terminal.buffer.active;
+			let bufferContent = "";
+			for (let i = 0; i < buffer.length; i++) {
+				const line = buffer.getLine(i);
+				if (line) {
+					bufferContent += `${line.translateToString(true)}\n`;
+				}
+			}
+
+			if (bufferContent) {
+				// Send the existing buffer as output
+				socketProtocol.sendToClient(clientId, {
+					type: "output",
+					clientId,
+					payload: { data: bufferContent },
+				});
+			}
 		});
 
 		// Handle messages from socket clients
