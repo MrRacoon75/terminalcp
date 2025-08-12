@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/terminalcp",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "MCP server for spawning and controlling background processes with virtual terminals",
 	"type": "module",
 	"main": "dist/index.js",
