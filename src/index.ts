@@ -171,25 +171,13 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 				}
 
 				const id = await processManager.start(command, { cwd, name });
-				const processes = processManager.listProcesses();
-				const processInfo = processes.find((p) => p.id === id);
 
+				// Minimal response - just return the ID
 				return {
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									id,
-									name: processInfo?.name,
-									command,
-									status: "started",
-									cwd: cwd || process.cwd(),
-									socketPath: processInfo?.socketPath,
-								},
-								null,
-								2,
-							),
+							text: id,
 						},
 					],
 				};
@@ -201,25 +189,17 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 				if (!id) {
 					// Stop all processes if no ID provided
 					const allProcesses = processManager.listProcesses();
-					const stoppedIds = [];
+					let count = 0;
 					for (const proc of allProcesses) {
 						await processManager.stop(proc.id);
-						stoppedIds.push(proc.id);
+						count++;
 					}
 
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										status: "all stopped",
-										count: stoppedIds.length,
-										ids: stoppedIds,
-									},
-									null,
-									2,
-								),
+								text: `stopped ${count} processes`,
 							},
 						],
 					};
@@ -231,7 +211,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify({ id, status: "stopped" }, null, 2),
+							text: `stopped ${id}`,
 						},
 					],
 				};
@@ -245,6 +225,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 				const output = await processManager.getOutput(id, { lines });
 
+				// Return raw output string directly
 				return {
 					content: [
 						{
@@ -264,24 +245,23 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 				const inputData = submit ? `${data}\r` : data;
 				await processManager.sendInput(id, inputData);
 
+				// Minimal response - no content needed for stdin
 				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify({ id, status: "input sent" }, null, 2),
-						},
-					],
+					content: [],
 				};
 			}
 
 			case "list": {
 				const list = processManager.listProcesses();
 
+				// Minimal format: one session per line (id status cwd command)
+				const lines = list.map((p) => `${p.id} ${p.running ? "running" : "stopped"} ${p.cwd} ${p.command}`);
+
 				return {
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(list, null, 2),
+							text: lines.join("\n"),
 						},
 					],
 				};
@@ -295,6 +275,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 				const output = await processManager.getStream(id, { since_last, strip_ansi });
 
+				// Return raw stream output directly
 				return {
 					content: [
 						{
@@ -313,11 +294,12 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 
 				const size = processManager.getTerminalSize(id);
 
+				// Minimal format: rows cols scrollback
 				return {
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(size, null, 2),
+							text: `${size.rows} ${size.cols} ${size.scrollback_lines}`,
 						},
 					],
 				};

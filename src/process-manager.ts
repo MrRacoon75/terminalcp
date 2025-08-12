@@ -29,8 +29,8 @@ class WriteQueue {
 
 export interface ManagedProcess {
 	id: string;
-	name: string;
 	command: string;
+	cwd: string;
 	process: pty.IPty;
 	terminal: XtermTerminalType;
 	startedAt: Date;
@@ -131,8 +131,29 @@ export class ProcessManager {
 	 * Start a new process with virtual terminal
 	 */
 	async start(command: string, options?: { cwd?: string; name?: string }): Promise<string> {
-		const id = `proc-${crypto.randomBytes(6).toString("hex")}`;
-		const name = options?.name || command.split(" ")[0].split("/").pop() || "unnamed";
+		// Use name as ID, or generate one if not provided
+		const id = options?.name || `proc-${crypto.randomBytes(6).toString("hex")}`;
+
+		// Check if session already exists (both in memory and on disk)
+		if (this.processes.has(id)) {
+			throw new Error(`Session '${id}' already exists`);
+		}
+
+		// Check for existing socket file from other MCP server instances
+		const socketPath = path.join(this.sessionsDir, `${id}.sock`);
+		if (fs.existsSync(socketPath)) {
+			// Check if socket is still alive
+			const isAlive = await this.isSocketAlive(socketPath);
+			if (isAlive) {
+				throw new Error(`Session '${id}' already exists (from another MCP server)`);
+			}
+			// Remove dead socket file
+			try {
+				fs.unlinkSync(socketPath);
+			} catch (err) {
+				// Ignore cleanup errors
+			}
+		}
 
 		const terminal = new Terminal({
 			cols: 80,
@@ -159,8 +180,8 @@ export class ProcessManager {
 		// Create process entry
 		const processEntry: ManagedProcess = {
 			id,
-			name,
 			command,
+			cwd: options?.cwd || process.cwd(),
 			process: proc,
 			terminal,
 			startedAt: new Date(),
@@ -218,7 +239,7 @@ export class ProcessManager {
 	 * Set up socket server for a process
 	 */
 	private async setupSocketServer(processEntry: ManagedProcess): Promise<void> {
-		const socketPath = path.join(this.sessionsDir, `${processEntry.name}-${processEntry.id}.sock`);
+		const socketPath = path.join(this.sessionsDir, `${processEntry.id}.sock`);
 
 		// Remove existing socket file if it exists
 		if (fs.existsSync(socketPath)) {
@@ -240,7 +261,7 @@ export class ProcessManager {
 					cols: processEntry.terminal.cols,
 					rows: processEntry.terminal.rows,
 					processId: processEntry.id,
-					name: processEntry.name,
+					name: processEntry.id,
 				},
 			});
 
@@ -437,8 +458,8 @@ export class ProcessManager {
 	 */
 	listProcesses(): Array<{
 		id: string;
-		name: string;
 		command: string;
+		cwd: string;
 		startedAt: string;
 		running: boolean;
 		pid?: number;
@@ -447,8 +468,8 @@ export class ProcessManager {
 	}> {
 		return Array.from(this.processes.values()).map((p) => ({
 			id: p.id,
-			name: p.name,
 			command: p.command,
+			cwd: p.cwd,
 			startedAt: p.startedAt.toISOString(),
 			running: p.process.pid !== undefined,
 			pid: p.process.pid,
