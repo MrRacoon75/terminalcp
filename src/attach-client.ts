@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -6,9 +5,7 @@ import type { ServerMessage } from "./server.js";
 
 export class AttachClient {
 	private socket?: net.Socket;
-	private serverSocketPath = path.join(os.homedir(), ".terminalcp", "server.sock");
 	private requestCounter = 0;
-	private clientId = `attach-${crypto.randomBytes(6).toString("hex")}`;
 	private isRawMode = false;
 	private stdin = process.stdin;
 	private stdout = process.stdout;
@@ -19,7 +16,6 @@ export class AttachClient {
 	 */
 	async listSessions(): Promise<void> {
 		const socket = await this.connect();
-
 		const response = await this.request(socket, "list");
 		socket.end();
 
@@ -82,7 +78,7 @@ export class AttachClient {
 					try {
 						const message: ServerMessage = JSON.parse(line);
 						this.handleMessage(message);
-					} catch (err) {
+					} catch (_err) {
 						// Ignore parse errors
 					}
 				}
@@ -105,7 +101,7 @@ export class AttachClient {
 	 */
 	private connect(): Promise<net.Socket> {
 		return new Promise((resolve, reject) => {
-			const socket = net.createConnection(this.serverSocketPath);
+			const socket = net.createConnection(path.join(os.homedir(), ".terminalcp", "server.sock"));
 
 			socket.once("connect", () => {
 				resolve(socket);
@@ -215,7 +211,7 @@ export class AttachClient {
 						submit: false,
 					},
 				};
-				this.socket.write(JSON.stringify(message) + "\n");
+				this.socket.write(`${JSON.stringify(message)}\n`);
 			}
 		});
 
@@ -244,7 +240,7 @@ export class AttachClient {
 				rows,
 			},
 		};
-		this.socket.write(JSON.stringify(message) + "\n");
+		this.socket.write(`${JSON.stringify(message)}\n`);
 	}
 
 	/**
@@ -260,7 +256,7 @@ export class AttachClient {
 				action: "detach",
 				args: { id: this.attachedSession },
 			};
-			this.socket.write(JSON.stringify(message) + "\n");
+			this.socket.write(`${JSON.stringify(message)}\n`);
 			this.socket.end();
 		}
 

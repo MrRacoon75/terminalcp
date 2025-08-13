@@ -43,7 +43,7 @@ export class TerminalServerClient {
 			// Wait for server to start with retries
 			let retries = 10;
 			while (retries > 0) {
-				await new Promise((resolve) => setTimeout(resolve, 500));
+				await new Promise((resolve) => setTimeout(resolve, 100));
 				if (await this.isServerRunning()) {
 					break;
 				}
