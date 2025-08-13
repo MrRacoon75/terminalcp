@@ -3,19 +3,19 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import { SimpleProcessManager } from "./simple-process-manager.js";
+import type {
+	Args,
+	AttachResult,
+	ServerEvent,
+	ServerMessage,
+	ServerRequest,
+	ServerResponse,
+	TermSizeResult,
+} from "./messages.js";
+import { SimpleProcessManager } from "./terminal-manager.js";
 
-export interface ServerMessage {
-	id: string; // Request ID for matching responses
-	type: "request" | "response" | "event";
-	action?: string; // For requests: start, stop, stdin, stdout, etc.
-	args?: any; // Arguments for the action
-	result?: any; // For responses
-	error?: string; // For error responses
-	event?: string; // For events: output, exit, etc.
-	sessionId?: string; // For events tied to a session
-	data?: any; // Event data
-}
+// Re-export for backward compatibility
+export type { ServerMessage } from "./messages.js";
 
 export class TerminalServer {
 	private processManager = new SimpleProcessManager();
@@ -119,19 +119,20 @@ export class TerminalServer {
 			return; // Ignore non-request messages from clients
 		}
 
-		const { id: requestId, action, args } = message;
+		const request = message as ServerRequest;
+		const { id: requestId, args } = request;
 
-		if (!requestId || !action) {
+		if (!requestId || !args) {
 			this.sendError(clientId, requestId || "unknown", "Missing required fields");
 			return;
 		}
 
 		try {
-			let result: any;
+			let result: string | AttachResult | TermSizeResult | null = null;
 
-			switch (action) {
+			switch (args.action) {
 				case "start": {
-					const { command, cwd, name } = args || {};
+					const { command, cwd, name } = args;
 					if (!command) {
 						throw new Error("Missing required field: command");
 					}
@@ -153,7 +154,7 @@ export class TerminalServer {
 				}
 
 				case "stop": {
-					const { id } = args || {};
+					const { id } = args;
 					if (!id) {
 						// Stop all
 						const processes = this.processManager.listProcesses();
@@ -173,7 +174,7 @@ export class TerminalServer {
 				}
 
 				case "stdin": {
-					const { id, data, submit } = args || {};
+					const { id, data, submit } = args;
 					if (!id || data === undefined) {
 						throw new Error("Missing required fields: id, data");
 					}
@@ -184,7 +185,7 @@ export class TerminalServer {
 				}
 
 				case "stdout": {
-					const { id, lines } = args || {};
+					const { id, lines } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -193,7 +194,7 @@ export class TerminalServer {
 				}
 
 				case "stream": {
-					const { id, since_last, strip_ansi } = args || {};
+					const { id, since_last, strip_ansi } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -209,43 +210,17 @@ export class TerminalServer {
 				}
 
 				case "term-size": {
-					const { id } = args || {};
+					const { id } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
 					const size = this.processManager.getTerminalSize(id);
-					result = `${size.rows} ${size.cols} ${size.scrollback_lines}`;
-					break;
-				}
-
-				case "subscribe": {
-					const { id } = args || {};
-					if (!id) {
-						throw new Error("Missing required field: id");
-					}
-					if (!this.sessionSubscribers.has(id)) {
-						this.sessionSubscribers.set(id, new Set());
-					}
-					this.sessionSubscribers.get(id)!.add(clientId);
-					result = "subscribed";
-					break;
-				}
-
-				case "unsubscribe": {
-					const { id } = args || {};
-					if (!id) {
-						throw new Error("Missing required field: id");
-					}
-					const subscribers = this.sessionSubscribers.get(id);
-					if (subscribers) {
-						subscribers.delete(clientId);
-					}
-					result = "unsubscribed";
+					result = size as TermSizeResult;
 					break;
 				}
 
 				case "attach": {
-					const { id } = args || {};
+					const { id } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -263,15 +238,16 @@ export class TerminalServer {
 
 					// Send initial terminal state
 					result = {
+						sessionId: id,
 						cols: proc.terminal.cols,
 						rows: proc.terminal.rows,
 						rawOutput: proc.rawOutput,
-					};
+					} as AttachResult;
 					break;
 				}
 
 				case "resize": {
-					const { id, cols, rows } = args || {};
+					const { id, cols, rows } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -285,7 +261,7 @@ export class TerminalServer {
 				}
 
 				case "detach": {
-					const { id } = args || {};
+					const { id } = args;
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -308,7 +284,7 @@ export class TerminalServer {
 				}
 
 				default:
-					throw new Error(`Unknown action: ${action}`);
+					throw new Error(`Unknown action: ${(args as any).action}`);
 			}
 
 			// Send response (unless it's stdin which returns null)
@@ -324,11 +300,11 @@ export class TerminalServer {
 	/**
 	 * Send a response to a client
 	 */
-	private sendResponse(clientId: string, requestId: string, result: any): void {
+	private sendResponse(clientId: string, requestId: string, result: string | AttachResult | TermSizeResult): void {
 		const socket = this.clients.get(clientId);
 		if (!socket || socket.destroyed) return;
 
-		const response: ServerMessage = {
+		const response: ServerResponse = {
 			id: requestId,
 			type: "response",
 			result,
@@ -344,7 +320,7 @@ export class TerminalServer {
 		const socket = this.clients.get(clientId);
 		if (!socket || socket.destroyed) return;
 
-		const response: ServerMessage = {
+		const response: ServerResponse = {
 			id: requestId,
 			type: "response",
 			error,
@@ -356,11 +332,15 @@ export class TerminalServer {
 	/**
 	 * Broadcast an event to subscribed clients
 	 */
-	private broadcastEvent(sessionId: string, event: string, data: any): void {
+	private broadcastEvent(
+		sessionId: string,
+		event: "output" | "exit" | "resize",
+		data: string | { cols: number; rows: number } | { exitCode: number },
+	): void {
 		const subscribers = this.sessionSubscribers.get(sessionId);
 		if (!subscribers) return;
 
-		const message: ServerMessage = {
+		const message: ServerEvent = {
 			id: `event-${Date.now()}`,
 			type: "event",
 			event,

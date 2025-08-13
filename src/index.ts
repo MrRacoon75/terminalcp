@@ -174,7 +174,7 @@ if (args.length > 0) {
 			});
 	} else if (args[0] === "--server") {
 		// Run in server mode (internal use)
-		import("./server.js").then(({ TerminalServer }) => {
+		import("./terminal-server.js").then(({ TerminalServer }) => {
 			const server = new TerminalServer();
 			server.start().catch((err) => {
 				console.error("Failed to start server:", err);

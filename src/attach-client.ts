@@ -1,7 +1,13 @@
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ServerMessage } from "./server.js";
+import {
+	type AttachResult,
+	createRequest,
+	type ServerEvent,
+	type ServerMessage,
+	type ServerResponse,
+} from "./messages.js";
 
 export class AttachClient {
 	private socket?: net.Socket;
@@ -16,7 +22,7 @@ export class AttachClient {
 	 */
 	async listSessions(): Promise<void> {
 		const socket = await this.connect();
-		const response = await this.request(socket, "list");
+		const response = await this.request(socket, createRequest({ action: "list" }));
 		socket.end();
 
 		if (!response) {
@@ -56,7 +62,10 @@ export class AttachClient {
 		this.attachedSession = sessionId;
 
 		// Request attachment
-		const attachResponse = await this.request(socket, "attach", { id: sessionId });
+		const attachResponse = (await this.request(
+			socket,
+			createRequest({ action: "attach", id: sessionId }),
+		)) as AttachResult;
 
 		// Set up terminal
 		this.setupTerminal();
@@ -116,16 +125,9 @@ export class AttachClient {
 	/**
 	 * Send a request and wait for response
 	 */
-	private request(socket: net.Socket, action: string, args?: any): Promise<any> {
+	private request(socket: net.Socket, request: { id: string; type: "request"; args: any }): Promise<any> {
 		return new Promise((resolve, reject) => {
-			const requestId = `req-${++this.requestCounter}`;
-
-			const message: ServerMessage = {
-				id: requestId,
-				type: "request",
-				action,
-				args,
-			};
+			const requestId = request.id;
 
 			// Set up one-time response handler
 			const handleData = (data: Buffer) => {
@@ -136,10 +138,11 @@ export class AttachClient {
 							const response: ServerMessage = JSON.parse(line);
 							if (response.id === requestId && response.type === "response") {
 								socket.removeListener("data", handleData);
-								if (response.error) {
-									reject(new Error(response.error));
+								const res = response as ServerResponse;
+								if (res.error) {
+									reject(new Error(res.error));
 								} else {
-									resolve(response.result);
+									resolve(res.result);
 								}
 								return;
 							}
@@ -151,7 +154,7 @@ export class AttachClient {
 			};
 
 			socket.on("data", handleData);
-			socket.write(JSON.stringify(message) + "\n");
+			socket.write(JSON.stringify(request) + "\n");
 
 			// Timeout after 5 seconds
 			setTimeout(() => {
@@ -166,9 +169,12 @@ export class AttachClient {
 	 */
 	private handleMessage(message: ServerMessage): void {
 		if (message.type === "event") {
-			if (message.event === "output" && message.sessionId === this.attachedSession) {
+			const event = message as ServerEvent;
+			if (event.event === "output" && event.sessionId === this.attachedSession) {
 				// Write output to stdout
-				this.stdout.write(message.data);
+				if (typeof event.data === "string") {
+					this.stdout.write(event.data);
+				}
 			}
 		}
 	}
@@ -201,16 +207,12 @@ export class AttachClient {
 
 			// Forward input to server
 			if (this.socket && !this.socket.destroyed && this.attachedSession) {
-				const message: ServerMessage = {
-					id: `input-${Date.now()}`,
-					type: "request",
+				const message = createRequest({
 					action: "stdin",
-					args: {
-						id: this.attachedSession,
-						data: data.toString(),
-						submit: false,
-					},
-				};
+					id: this.attachedSession,
+					data: data.toString(),
+					submit: false,
+				});
 				this.socket.write(`${JSON.stringify(message)}\n`);
 			}
 		});
@@ -230,16 +232,12 @@ export class AttachClient {
 		const cols = this.stdout.columns || 80;
 		const rows = this.stdout.rows || 24;
 
-		const message: ServerMessage = {
-			id: `resize-${Date.now()}`,
-			type: "request",
+		const message = createRequest({
 			action: "resize",
-			args: {
-				id: this.attachedSession,
-				cols,
-				rows,
-			},
-		};
+			id: this.attachedSession,
+			cols,
+			rows,
+		});
 		this.socket.write(`${JSON.stringify(message)}\n`);
 	}
 
@@ -250,12 +248,10 @@ export class AttachClient {
 		console.error("\n[Detaching...]");
 
 		if (this.socket && !this.socket.destroyed && this.attachedSession) {
-			const message: ServerMessage = {
-				id: `detach-${Date.now()}`,
-				type: "request",
+			const message = createRequest({
 				action: "detach",
-				args: { id: this.attachedSession },
-			};
+				id: this.attachedSession,
+			});
 			this.socket.write(`${JSON.stringify(message)}\n`);
 			this.socket.end();
 		}

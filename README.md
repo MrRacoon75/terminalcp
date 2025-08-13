@@ -22,6 +22,15 @@ Two output modes for different use cases:
 
 Each process runs in a proper pseudo-TTY with full terminal emulation, preserving colors, cursor movement, and special key sequences - exactly as if a human were typing at the keyboard. Processes run in the background, so your agent stays responsive while managing long-running tools.
 
+## Architecture
+
+terminalcp uses a centralized server architecture inspired by tmux:
+- **Single server process** manages all terminal sessions (auto-spawns when needed)
+- **Sessions persist** across MCP server restarts and client disconnections
+- **Multiple clients** can connect to the same session simultaneously
+- **Full CLI interface** for direct terminal management outside of MCP
+- **Unix domain sockets** enable direct terminal attachment from any client
+
 ## Requirements
 - Node.js 18 or newer
 - VS Code, Cursor, Windsurf, Claude Desktop, Goose or any other MCP client
@@ -108,6 +117,47 @@ Then use this config:
 ```
 </details>
 
+## CLI Usage
+
+terminalcp works as a standalone CLI tool for managing terminal sessions:
+
+```bash
+# List all active sessions
+terminalcp ls
+
+# Start a new session
+terminalcp start my-session "npm run dev"
+
+# Attach to a session (interactive mode, Ctrl+Q to detach)
+terminalcp attach my-session
+
+# Get output from a session
+terminalcp stdout my-session
+terminalcp stdout my-session 50  # Last 50 lines
+
+# Send input to a session
+terminalcp stdin my-session "echo hello"
+terminalcp stdin my-session "npm test" --submit  # Auto-press Enter
+
+# Get raw stream output
+terminalcp stream my-session
+terminalcp stream my-session --since-last  # Only new output
+terminalcp stream my-session --with-ansi   # Keep ANSI codes
+
+# Get terminal size
+terminalcp term-size my-session
+
+# Resize terminal
+terminalcp resize my-session 120 40
+
+# Stop a session
+terminalcp stop my-session
+terminalcp stop  # Stop all sessions
+
+# Kill the terminal server
+terminalcp kill-server
+```
+
 ## Real-world Examples
 
 ### Interactive AI Agents (Claude, Gemini)
@@ -174,7 +224,7 @@ Then use this config:
 
 ## Attaching to AI-Spawned Sessions
 
-terminalcp creates Unix domain sockets for each spawned process, allowing you to attach from your terminal, just like screen or tmux.
+terminalcp creates a centralized server that manages all sessions, allowing you to attach from your terminal just like screen or tmux.
 
 ### How to Use
 
@@ -189,16 +239,15 @@ terminalcp ls
 # Output:
 # Active sessions:
 # ================
-#   python-debug (proc-abc123)
-#     Socket: /Users/you/.terminalcp/sessions/python-debug-proc-abc123.sock
-#     Started: 1/15/2025, 10:30:45 AM
+#   python-debug
+#     Status: running
+#     CWD: /Users/you/project
+#     Command: python3 -i
 ```
 
 3. **Attach to the session**:
 ```bash
 terminalcp attach python-debug
-# OR use the process ID:
-terminalcp attach proc-abc123
 ```
 
 4. **Interact with the process**:
@@ -214,13 +263,18 @@ terminalcp attach proc-abc123
 - **Monitoring**: Observe long-running processes
 - **Teaching**: See how the AI solves problems step-by-step
 
-### Socket Files
+### Server Architecture
 
-Sessions are stored as Unix domain sockets in `~/.terminalcp/sessions/`. Each socket is named `{name}-{id}.sock` for easy identification. Sockets are automatically cleaned up when processes exit.
+Sessions are managed by a central server process that:
+- Auto-spawns when needed (first client connection)
+- Persists across MCP server restarts
+- Manages all terminal sessions in memory
+- Uses Unix domain socket at `~/.terminalcp/server.sock`
+- Can be manually killed with `terminalcp kill-server`
 
 ## How it works
 
-terminalcp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes, each running in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
+terminalcp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes through a centralized server architecture. Each process runs in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
 
 ### Tool: `terminal`
 
@@ -232,10 +286,10 @@ The terminal tool accepts a JSON object with different action types:
   "action": "start",
   "command": "npm run dev",
   "cwd": "/path/to/project",  // optional
-  "name": "dev-server"  // optional: human-readable name for socket attachment
+  "name": "dev-server"  // optional: human-readable name for session
 }
 ```
-**Returns**: Process ID, name, command, status, working directory, and socket path
+**Returns**: Process ID (same as name if provided)
 
 #### Stop a process
 ```json
@@ -268,6 +322,8 @@ Use `stdout` for:
 - REPLs with formatted output
 - Any tool where visual formatting matters
 
+Note: If scrollback exceeds viewport, the TUI may handle scrolling internally - try sending Page Up/Down (`\u001b[5~` / `\u001b[6~`) via stdin to navigate.
+
 #### Get raw stream output
 ```json
 {
@@ -295,7 +351,7 @@ Use `stream` for:
   "submit": true  // Optional: automatically append Enter key (\r)
 }
 ```
-**Returns**: Confirmation of input sent
+**Returns**: No content (action completes immediately)
 
 **Options**:
 - `submit`: (optional, boolean) When `true`, automatically appends Enter key (`\r`) to the input. Defaults to `false`.
@@ -326,7 +382,7 @@ Send ANSI sequences like Ctrl+C:
   "action": "list"
 }
 ```
-**Returns**: Array of running processes with their IDs and commands
+**Returns**: List of running processes with their IDs, status, working directory, and commands
 
 ## Development
 

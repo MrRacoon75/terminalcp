@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ServerMessage } from "./server.js";
+import { type Args, createRequest, type ServerEvent, type ServerMessage, type ServerResponse } from "./messages.js";
 
 export class TerminalServerClient {
 	private socket?: net.Socket;
@@ -173,19 +173,23 @@ export class TerminalServerClient {
 	 */
 	private handleMessage(message: ServerMessage): void {
 		if (message.type === "response") {
-			const pending = this.pendingRequests.get(message.id);
+			const response = message as ServerResponse;
+			const pending = this.pendingRequests.get(response.id);
 			if (pending) {
-				this.pendingRequests.delete(message.id);
-				if (message.error) {
-					pending.reject(new Error(message.error));
+				this.pendingRequests.delete(response.id);
+				if (response.error) {
+					pending.reject(new Error(response.error));
 				} else {
-					pending.resolve(message.result);
+					pending.resolve(response.result);
 				}
 			}
 		} else if (message.type === "event") {
-			const handler = this.eventHandlers.get(message.event!);
-			if (handler) {
-				handler(message.sessionId!, message.data);
+			const event = message as ServerEvent;
+			if (event.event && event.sessionId) {
+				const handler = this.eventHandlers.get(event.event);
+				if (handler) {
+					handler(event.sessionId, event.data);
+				}
 			}
 		}
 	}
@@ -193,7 +197,7 @@ export class TerminalServerClient {
 	/**
 	 * Send a request to the server
 	 */
-	async request(action: string, args?: any): Promise<any> {
+	async request(action: string, args?: Partial<Args>): Promise<any> {
 		if (!this.connected) {
 			await this.connect();
 		}
@@ -203,12 +207,11 @@ export class TerminalServerClient {
 
 			this.pendingRequests.set(requestId, { resolve, reject });
 
-			const message: ServerMessage = {
-				id: requestId,
-				type: "request",
-				action,
-				args,
-			};
+			// Build the proper Args object based on action
+			const fullArgs = { ...args, action } as Args;
+			const message = createRequest(fullArgs);
+			// Override the generated ID with our own for tracking
+			message.id = requestId;
 
 			this.socket!.write(JSON.stringify(message) + "\n");
 

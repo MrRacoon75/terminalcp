@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { Args } from "./messages.js";
 import { TerminalServerClient } from "./terminal-client.js";
 
 export async function runMCPServer(): Promise<void> {
@@ -46,7 +47,7 @@ Output modes:
 Interactive CLI usage:
   - Use submit: true to automatically append Enter key (\\r) to your input
   - Omit submit or set to false for manual control
-  
+
 Interactive examples:
   Claude: start → stdin "say hello" with submit: true → stdout → stop
   Python: start "python3 -i" → stdin "print('hi')" with submit: true → stdout
@@ -121,26 +122,15 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 		if (request.params.name !== "terminal") {
 			throw new Error(`Unknown tool: ${request.params.name}`);
 		}
-
-		// biome-ignore lint/suspicious/noExplicitAny: MCP arguments are dynamically typed
-		const args = request.params.arguments?.args as any;
-
+		const args = request.params.arguments?.args as Args;
 		if (!args || typeof args !== "object") {
 			throw new Error("Invalid arguments: expected JSON object");
 		}
 
-		const { action } = args;
-
-		switch (action) {
+		switch (args.action) {
 			case "start": {
-				const { command, cwd, name } = args;
-				if (!command) {
-					throw new Error("Missing required field: command");
-				}
-
-				const id = await serverClient.request("start", { command, cwd, name });
-
-				// Minimal response - just return the ID
+				if (!args.command) throw new Error("Missing required field: command");
+				const id = await serverClient.request("start", args);
 				return {
 					content: [
 						{
@@ -152,9 +142,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "stop": {
-				const { id } = args;
-				const result = await serverClient.request("stop", { id });
-
+				const result = await serverClient.request("stop", args);
 				return {
 					content: [
 						{
@@ -166,14 +154,8 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "stdout": {
-				const { id, lines } = args;
-				if (!id) {
-					throw new Error("Missing required field: id");
-				}
-
-				const output = await serverClient.request("stdout", { id, lines });
-
-				// Return raw output string directly
+				if (!args.id) throw new Error("Missing required field: id");
+				const output = await serverClient.request("stdout", args);
 				return {
 					content: [
 						{
@@ -185,22 +167,17 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "stdin": {
-				const { id, data, submit } = args;
-				if (!id || data === undefined) {
+				if (!args.id || args.data === undefined) {
 					throw new Error("Missing required fields: id, data");
 				}
-
-				await serverClient.request("stdin", { id, data, submit });
-
-				// Minimal response - no content needed for stdin
+				await serverClient.request("stdin", args);
 				return {
 					content: [],
 				};
 			}
 
 			case "list": {
-				const result = await serverClient.request("list");
-
+				const result = await serverClient.request("list", {});
 				return {
 					content: [
 						{
@@ -212,14 +189,11 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "stream": {
-				const { id, since_last, strip_ansi } = args;
-				if (!id) {
+				if (!args.id) {
 					throw new Error("Missing required field: id");
 				}
 
-				const output = await serverClient.request("stream", { id, since_last, strip_ansi });
-
-				// Return raw stream output directly
+				const output = await serverClient.request("stream", args);
 				return {
 					content: [
 						{
@@ -231,12 +205,8 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			}
 
 			case "term-size": {
-				const { id } = args;
-				if (!id) {
-					throw new Error("Missing required field: id");
-				}
-
-				const result = await serverClient.request("term-size", { id });
+				if (!args.id) throw new Error("Missing required field: id");
+				const result = await serverClient.request("term-size", args);
 
 				return {
 					content: [
@@ -247,9 +217,8 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 					],
 				};
 			}
-
 			default:
-				throw new Error(`Unknown action: ${action}`);
+				throw new Error(`Unknown action: ${args.action}`);
 		}
 	});
 
