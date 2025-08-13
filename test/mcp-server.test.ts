@@ -1,5 +1,5 @@
-import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
+import { after, before, describe, it } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -23,7 +23,7 @@ describe("MCP Server", () => {
 			},
 			{
 				capabilities: {},
-			}
+			},
 		);
 
 		await client.connect(transport);
@@ -36,10 +36,10 @@ describe("MCP Server", () => {
 			await client.callTool({
 				name: "terminal",
 				arguments: {
-					args: { action: "stop" }
-				}
+					args: { action: "stop" },
+				},
 			});
-		} catch (err) {
+		} catch (_err) {
 			// Ignore errors during cleanup
 		}
 
@@ -50,7 +50,7 @@ describe("MCP Server", () => {
 	it("should list available tools", async () => {
 		const tools = await client.listTools();
 		assert.ok(tools.tools.length > 0, "Should have at least one tool");
-		
+
 		const terminalTool = tools.tools.find((t) => t.name === "terminal");
 		assert.ok(terminalTool, "Should have terminal tool");
 	});
@@ -62,9 +62,9 @@ describe("MCP Server", () => {
 				args: {
 					action: "start",
 					command: "echo 'Hello from MCP test'",
-					name: "test-echo"
-				}
-			}
+					name: "test-echo",
+				},
+			},
 		});
 
 		const processId = result.content[0].text;
@@ -78,14 +78,14 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "start",
-					command: "echo 'Test output'"
-				}
-			}
+					command: "echo 'Test output'",
+				},
+			},
 		});
 		const processId = startResult.content[0].text;
 
 		// Wait for output
-		await new Promise(resolve => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 500));
 
 		// Get output
 		const outputResult = await client.callTool({
@@ -93,9 +93,9 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "stdout",
-					id: processId
-				}
-			}
+					id: processId,
+				},
+			},
 		});
 
 		const output = outputResult.content[0].text;
@@ -106,8 +106,8 @@ describe("MCP Server", () => {
 		const result = await client.callTool({
 			name: "terminal",
 			arguments: {
-				args: { action: "list" }
-			}
+				args: { action: "list" },
+			},
 		});
 
 		const processList = result.content[0].text;
@@ -122,9 +122,9 @@ describe("MCP Server", () => {
 				args: {
 					action: "start",
 					command: "cat",
-					name: "interactive-cat"
-				}
-			}
+					name: "interactive-cat",
+				},
+			},
 		});
 		const processId = startResult.content[0].text;
 
@@ -136,13 +136,13 @@ describe("MCP Server", () => {
 					action: "stdin",
 					id: processId,
 					data: "Test input",
-					submit: true
-				}
-			}
+					submit: true,
+				},
+			},
 		});
 
 		// Wait for echo
-		await new Promise(resolve => setTimeout(resolve, 200));
+		await new Promise((resolve) => setTimeout(resolve, 200));
 
 		// Get output
 		const outputResult = await client.callTool({
@@ -150,9 +150,9 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "stdout",
-					id: processId
-				}
-			}
+					id: processId,
+				},
+			},
 		});
 
 		const output = outputResult.content[0].text;
@@ -164,23 +164,23 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "stop",
-					id: processId
-				}
-			}
+					id: processId,
+				},
+			},
 		});
 	});
 
 	it("should stop a specific process", async () => {
 		// Start a process
-		const startResult = await client.callTool({
+		const _startResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "start",
 					command: "sleep 60",
-					name: "test-stop"
-				}
-			}
+					name: "test-stop",
+				},
+			},
 		});
 
 		// Stop it
@@ -189,9 +189,9 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "stop",
-					id: "test-stop"
-				}
-			}
+					id: "test-stop",
+				},
+			},
 		});
 
 		const result = stopResult.content[0].text;
@@ -200,15 +200,15 @@ describe("MCP Server", () => {
 
 	it("should get terminal size", async () => {
 		// Start a process
-		const startResult = await client.callTool({
+		const _startResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "start",
 					command: "bash",
-					name: "test-size"
-				}
-			}
+					name: "test-size",
+				},
+			},
 		});
 
 		// Get terminal size
@@ -217,9 +217,9 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "term-size",
-					id: "test-size"
-				}
-			}
+					id: "test-size",
+				},
+			},
 		});
 
 		const sizeText = sizeResult.content[0].text;
@@ -233,9 +233,9 @@ describe("MCP Server", () => {
 			arguments: {
 				args: {
 					action: "stop",
-					id: "test-size"
-				}
-			}
+					id: "test-size",
+				},
+			},
 		});
 	});
 
@@ -243,8 +243,8 @@ describe("MCP Server", () => {
 		const result = await client.callTool({
 			name: "terminal",
 			arguments: {
-				args: { action: "version" }
-			}
+				args: { action: "version" },
+			},
 		});
 
 		const version = result.content[0].text;
