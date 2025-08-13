@@ -128,7 +128,7 @@ terminalcp ls
 # Start a new session
 terminalcp start my-session "npm run dev"
 
-# Attach to a session (interactive mode, Ctrl+Q to detach)
+# Attach to a session (interactive mode, Ctrl+B to detach)
 terminalcp attach my-session
 
 # Get output from a session
@@ -153,6 +153,9 @@ terminalcp resize my-session 120 40
 # Stop a session
 terminalcp stop my-session
 terminalcp stop  # Stop all sessions
+
+# Check version
+terminalcp version
 
 # Kill the terminal server
 terminalcp kill-server
@@ -253,7 +256,7 @@ terminalcp attach python-debug
 4. **Interact with the process**:
 - Type commands as normal
 - Terminal resizing is automatically synchronized
-- Press **Ctrl+Q** to detach (session continues running)
+- Press **Ctrl+B** to detach (session continues running)
 - Multiple users can attach to the same session
 
 ### Use Cases
@@ -383,6 +386,14 @@ Send ANSI sequences like Ctrl+C:
 }
 ```
 **Returns**: List of running processes with their IDs, status, working directory, and commands
+
+#### Kill the terminal server
+```json
+{
+  "action": "kill-server"
+}
+```
+**Returns**: Confirmation message before shutting down the entire terminal server and all sessions
 
 ## Development
 

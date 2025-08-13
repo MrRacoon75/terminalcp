@@ -39,6 +39,7 @@ Examples:
   Get raw stream (for logs/builds): {"action": "stream", "id": "proc-abc123", "since_last": true}
   Get terminal size: {"action": "term-size", "id": "proc-abc123"}
   List processes: {"action": "list"}
+  Kill server: {"action": "kill-server"}
 
 Output modes:
   - stdout: Returns rendered terminal screen with scrollback (use for TUIs, REPLs, debuggers). If scrollback > viewport, the TUI may handle scrolling - try sending Page Up/Down (\\u001b[5~ / \\u001b[6~) via stdin to navigate
@@ -62,7 +63,7 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 							properties: {
 								action: {
 									type: "string",
-									enum: ["start", "stop", "stdout", "stdin", "list", "stream", "term-size"],
+									enum: ["start", "stop", "stdout", "stdin", "list", "stream", "term-size", "kill-server"],
 									description: "The action to perform",
 								},
 								command: {
@@ -127,99 +128,15 @@ Note: Commands are executed via bash -c wrapper. Aliases won't work - use absolu
 			throw new Error("Invalid arguments: expected JSON object");
 		}
 
-		switch (args.action) {
-			case "start": {
-				if (!args.command) throw new Error("Missing required field: command");
-				const id = await serverClient.request("start", args);
-				return {
-					content: [
-						{
-							type: "text",
-							text: id,
-						},
-					],
-				};
-			}
-
-			case "stop": {
-				const result = await serverClient.request("stop", args);
-				return {
-					content: [
-						{
-							type: "text",
-							text: result,
-						},
-					],
-				};
-			}
-
-			case "stdout": {
-				if (!args.id) throw new Error("Missing required field: id");
-				const output = await serverClient.request("stdout", args);
-				return {
-					content: [
-						{
-							type: "text",
-							text: output,
-						},
-					],
-				};
-			}
-
-			case "stdin": {
-				if (!args.id || args.data === undefined) {
-					throw new Error("Missing required fields: id, data");
-				}
-				await serverClient.request("stdin", args);
-				return {
-					content: [],
-				};
-			}
-
-			case "list": {
-				const result = await serverClient.request("list", {});
-				return {
-					content: [
-						{
-							type: "text",
-							text: result,
-						},
-					],
-				};
-			}
-
-			case "stream": {
-				if (!args.id) {
-					throw new Error("Missing required field: id");
-				}
-
-				const output = await serverClient.request("stream", args);
-				return {
-					content: [
-						{
-							type: "text",
-							text: output,
-						},
-					],
-				};
-			}
-
-			case "term-size": {
-				if (!args.id) throw new Error("Missing required field: id");
-				const result = await serverClient.request("term-size", args);
-
-				return {
-					content: [
-						{
-							type: "text",
-							text: result,
-						},
-					],
-				};
-			}
-			default:
-				throw new Error(`Unknown action: ${args.action}`);
-		}
+		const result = await serverClient.request(args);
+		return {
+			content: [
+				{
+					type: "text",
+					text: result || "",
+				},
+			],
+		};
 	});
 
 	// Cleanup on exit

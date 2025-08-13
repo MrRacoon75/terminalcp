@@ -61,6 +61,10 @@ export interface KillServerArgs {
 	action: "kill-server";
 }
 
+export interface VersionArgs {
+	action: "version";
+}
+
 export type Args =
 	| StartArgs
 	| StopArgs
@@ -72,10 +76,10 @@ export type Args =
 	| AttachArgs
 	| DetachArgs
 	| ListArgs
-	| KillServerArgs;
+	| KillServerArgs
+	| VersionArgs;
 
 export interface AttachResult {
-	sessionId: string;
 	cols: number;
 	rows: number;
 	rawOutput?: string;
@@ -102,35 +106,34 @@ export interface ServerResponse {
 	error?: string;
 }
 
-// Event message
-export interface ServerEvent {
-	id: string;
-	type: "event";
-	event: "output" | "exit" | "resize";
-	sessionId?: string;
-	data?: string | { cols: number; rows: number } | { exitCode: number };
+export interface OutputEvent {
+	event: "output";
+	sessionId: string;
+	data: string; // Output data
 }
 
-// Union type for all messages
-export type ServerMessage = ServerRequest | ServerResponse | ServerEvent;
-
-// Type guards
-export function isRequest(msg: ServerMessage): msg is ServerRequest {
-	return msg.type === "request";
+export interface ResizeEvent {
+	event: "resize";
+	sessionId: string;
+	cols: number;
+	rows: number; // New terminal size
 }
 
-export function isResponse(msg: ServerMessage): msg is ServerResponse {
-	return msg.type === "response";
+export interface ExitEvent {
+	event: "exit";
+	sessionId: string;
+	exitCode: number; // Exit code of the process
 }
 
-export function isEvent(msg: ServerMessage): msg is ServerEvent {
-	return msg.type === "event";
-}
+export type ServerEvent = { type: "event" } & (OutputEvent | ResizeEvent | ExitEvent);
 
+export type ServerMessage = ServerResponse | ServerEvent;
+
+let requestCounter = 0;
 // Helper to create typed requests
 export function createRequest(args: Args): ServerRequest {
 	return {
-		id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+		id: `req-${++requestCounter}`,
 		type: "request",
 		args,
 	};

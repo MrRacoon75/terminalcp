@@ -1,23 +1,49 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type Args, createRequest, type ServerEvent, type ServerMessage, type ServerResponse } from "./messages.js";
+import { fileURLToPath } from "node:url";
+import {
+	type Args,
+	type AttachArgs,
+	type AttachResult,
+	createRequest,
+	type DetachArgs,
+	type KillServerArgs,
+	type ListArgs,
+	type ResizeArgs,
+	type ServerEvent,
+	type ServerMessage,
+	type ServerResponse,
+	type StartArgs,
+	type StdinArgs,
+	type StdoutArgs,
+	type StopArgs,
+	type StreamArgs,
+	type TermSizeArgs,
+	type VersionArgs,
+} from "./messages.js";
+import { startServer } from "./terminal-server.js";
+
+// Read version from package.json
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJsonPath = path.join(__dirname, "..", "package.json");
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+const CLIENT_VERSION = packageJson.version;
 
 export class TerminalServerClient {
 	private socket?: net.Socket;
 	private serverSocketPath = path.join(os.homedir(), ".terminalcp", "server.sock");
-	private requestCounter = 0;
+	// biome-ignore lint/suspicious/noExplicitAny: Hard to type this without a lot of effort
 	private pendingRequests = new Map<string, { resolve: (result: any) => void; reject: (error: Error) => void }>();
-	private eventHandlers = new Map<string, (sessionId: string, data: any) => void>();
+	private eventHandlers = new Map<string, (event: ServerEvent) => void>();
 	private connected = false;
 	private connectPromise?: Promise<void>;
 
 	/**
 	 * Connect to the terminal server, starting it if necessary
 	 */
-	async connect(): Promise<void> {
+	async connect(skipVersionCheck = false): Promise<void> {
 		// If already connecting, wait for that
 		if (this.connectPromise) {
 			return this.connectPromise;
@@ -28,17 +54,21 @@ export class TerminalServerClient {
 			return;
 		}
 
-		this.connectPromise = this.doConnect();
+		this.connectPromise = this.doConnect(skipVersionCheck);
 		return this.connectPromise;
 	}
 
-	private async doConnect(): Promise<void> {
+	private async doConnect(skipVersionCheck = false): Promise<void> {
 		// Check if server is already running
 		if (await this.isServerRunning()) {
 			await this.connectToServer();
+			// Check version compatibility (unless explicitly skipped)
+			if (!skipVersionCheck) {
+				await this.checkServerVersion();
+			}
 		} else {
-			// Start the server
-			await this.startServer();
+			// Start the server (will be same version)
+			await startServer();
 
 			// Wait for server to start with retries
 			let retries = 10;
@@ -56,6 +86,29 @@ export class TerminalServerClient {
 
 			// Try to connect
 			await this.connectToServer();
+			// No need to check version - we just started it
+		}
+	}
+
+	private async checkServerVersion(): Promise<void> {
+		try {
+			const serverVersion = await this.request({ action: "version" } as VersionArgs);
+			if (serverVersion !== CLIENT_VERSION) {
+				throw new Error(
+					`Server version mismatch: server is v${serverVersion}, client is v${CLIENT_VERSION}. ` +
+						`Please run 'terminalcp kill-server' to stop the old server (this will terminate all managed processes).`,
+				);
+			}
+		} catch (err) {
+			// If it's already an error about version mismatch, re-throw it
+			if (err instanceof Error && err.message.includes("Server version mismatch")) {
+				throw err;
+			}
+			// Otherwise, old server doesn't support version action - must be pre-1.2.2
+			throw new Error(
+				`Server version mismatch: server is pre-v1.2.2 (doesn't support version check), client is v${CLIENT_VERSION}. ` +
+					`Please run 'terminalcp kill-server' to stop the old server (this will terminate all managed processes).`,
+			);
 		}
 	}
 
@@ -68,9 +121,7 @@ export class TerminalServerClient {
 				resolve(false);
 				return;
 			}
-
 			const socket = net.createConnection(this.serverSocketPath);
-
 			const timeout = setTimeout(() => {
 				socket.destroy();
 				resolve(false);
@@ -87,36 +138,6 @@ export class TerminalServerClient {
 				resolve(false);
 			});
 		});
-	}
-
-	/**
-	 * Start the terminal server
-	 */
-	private async startServer(): Promise<void> {
-		// Determine how to start the server
-		let command: string;
-		let args: string[];
-
-		// Check if we're running via tsx (development) or from dist
-		const scriptPath = new URL(import.meta.url).pathname;
-		const isTypescript = scriptPath.includes("/src/");
-
-		if (isTypescript) {
-			// Development mode: use tsx to run the TypeScript file
-			command = "npx";
-			args = ["tsx", path.join(path.dirname(scriptPath), "index.ts"), "--server"];
-		} else {
-			// Production mode: run the compiled JavaScript
-			command = "node";
-			args = [path.join(path.dirname(scriptPath), "index.js"), "--server"];
-		}
-
-		const serverProcess = spawn(command, args, {
-			detached: true,
-			stdio: "ignore",
-		});
-
-		serverProcess.unref(); // Allow parent to exit independently
 	}
 
 	/**
@@ -155,7 +176,7 @@ export class TerminalServerClient {
 				this.socket = undefined;
 
 				// Reject all pending requests
-				for (const [id, { reject }] of this.pendingRequests) {
+				for (const [_id, { reject }] of this.pendingRequests) {
 					reject(new Error("Server connection closed"));
 				}
 				this.pendingRequests.clear();
@@ -172,24 +193,29 @@ export class TerminalServerClient {
 	 * Handle a message from the server
 	 */
 	private handleMessage(message: ServerMessage): void {
-		if (message.type === "response") {
-			const response = message as ServerResponse;
-			const pending = this.pendingRequests.get(response.id);
-			if (pending) {
-				this.pendingRequests.delete(response.id);
-				if (response.error) {
-					pending.reject(new Error(response.error));
-				} else {
-					pending.resolve(response.result);
+		switch (message.type) {
+			case "response": {
+				const response = message as ServerResponse;
+				const pending = this.pendingRequests.get(response.id);
+				if (pending) {
+					this.pendingRequests.delete(response.id);
+					if (response.error) {
+						pending.reject(new Error(response.error));
+					} else {
+						pending.resolve(response.result);
+					}
 				}
+				break;
 			}
-		} else if (message.type === "event") {
-			const event = message as ServerEvent;
-			if (event.event && event.sessionId) {
-				const handler = this.eventHandlers.get(event.event);
-				if (handler) {
-					handler(event.sessionId, event.data);
+			case "event": {
+				const event = message as ServerEvent;
+				if (event.event && event.sessionId) {
+					const handler = this.eventHandlers.get(event.event);
+					if (handler) {
+						handler(event);
+					}
 				}
+				break;
 			}
 		}
 	}
@@ -197,38 +223,60 @@ export class TerminalServerClient {
 	/**
 	 * Send a request to the server
 	 */
-	async request(action: string, args?: Partial<Args>): Promise<any> {
+	async request<T extends Args>(
+		args: T,
+	): Promise<
+		T extends StartArgs
+			? string
+			: T extends StopArgs
+				? string
+				: T extends StdinArgs
+					? void
+					: T extends StdoutArgs
+						? string
+						: T extends StreamArgs
+							? string
+							: T extends TermSizeArgs
+								? string
+								: T extends ResizeArgs
+									? void
+									: T extends AttachArgs
+										? AttachResult
+										: T extends DetachArgs
+											? string
+											: T extends ListArgs
+												? string
+												: T extends KillServerArgs
+													? string
+													: T extends VersionArgs
+														? string
+														: unknown
+	> {
 		if (!this.connected) {
-			await this.connect();
+			// Skip version check for kill-server and version commands
+			const skipVersionCheck = args.action === "kill-server" || args.action === "version";
+			await this.connect(skipVersionCheck);
 		}
 
 		return new Promise((resolve, reject) => {
-			const requestId = `req-${++this.requestCounter}`;
-
-			this.pendingRequests.set(requestId, { resolve, reject });
-
-			// Build the proper Args object based on action
-			const fullArgs = { ...args, action } as Args;
-			const message = createRequest(fullArgs);
-			// Override the generated ID with our own for tracking
-			message.id = requestId;
-
-			this.socket!.write(JSON.stringify(message) + "\n");
+			const message = createRequest(args);
+			this.pendingRequests.set(message.id, { resolve, reject });
+			this.socket?.write(`${JSON.stringify(message)}\n`);
 
 			// Set a timeout for the request
 			setTimeout(() => {
-				if (this.pendingRequests.has(requestId)) {
-					this.pendingRequests.delete(requestId);
+				if (this.pendingRequests.has(message.id)) {
+					this.pendingRequests.delete(message.id);
 					reject(new Error("Request timeout"));
 				}
-			}, 30000); // 30 second timeout
+			}, 5000);
 		});
 	}
 
 	/**
 	 * Register an event handler
 	 */
-	onEvent(event: string, handler: (sessionId: string, data: any) => void): void {
+	registerEventHandler(event: ServerEvent["event"], handler: (event: ServerEvent) => void): void {
 		this.eventHandlers.set(event, handler);
 	}
 

@@ -1,60 +1,21 @@
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-	type AttachResult,
-	createRequest,
-	type ServerEvent,
-	type ServerMessage,
-	type ServerResponse,
-} from "./messages.js";
+import { type AttachResult, createRequest, type ServerMessage, type ServerResponse } from "./messages.js";
 
 export class AttachClient {
 	private socket?: net.Socket;
-	private requestCounter = 0;
 	private isRawMode = false;
 	private stdin = process.stdin;
 	private stdout = process.stdout;
 	private attachedSession?: string;
 
 	/**
-	 * List all available sessions
-	 */
-	async listSessions(): Promise<void> {
-		const socket = await this.connect();
-		const response = await this.request(socket, createRequest({ action: "list" }));
-		socket.end();
-
-		if (!response) {
-			console.log("No active sessions");
-			return;
-		}
-
-		const lines = response.split("\n").filter((line: string) => line.trim());
-		if (lines.length === 0) {
-			console.log("No active sessions");
-			return;
-		}
-
-		console.log("Active sessions:");
-		console.log("================");
-		for (const line of lines) {
-			const [id, status, cwd, ...commandParts] = line.split(" ");
-			const command = commandParts.join(" ");
-			console.log(`  ${id}`);
-			console.log(`    Status: ${status}`);
-			console.log(`    CWD: ${cwd}`);
-			console.log(`    Command: ${command}`);
-			console.log();
-		}
-	}
-
-	/**
 	 * Attach to a session
 	 */
 	async attach(sessionId: string): Promise<void> {
 		console.error(`Attaching to session ${sessionId}...`);
-		console.error("Press Ctrl+Q to detach");
+		console.error("Press Ctrl+B to detach");
 		console.error("");
 
 		const socket = await this.connect();
@@ -62,17 +23,20 @@ export class AttachClient {
 		this.attachedSession = sessionId;
 
 		// Request attachment
-		const attachResponse = (await this.request(
-			socket,
-			createRequest({ action: "attach", id: sessionId }),
-		)) as AttachResult;
+		const attachResponse = (await this.requestAttach(sessionId)) as AttachResult;
 
 		// Set up terminal
 		this.setupTerminal();
 
+		// Reset terminal completely before showing session (same as cleanup)
+		this.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?47l\x1b[?1049l\x1bc");
+
 		// Display initial output
 		if (attachResponse.rawOutput) {
-			this.stdout.write(attachResponse.rawOutput);
+			if (!this.stdout.write(attachResponse.rawOutput)) {
+				// Handle backpressure - wait for drain before continuing
+				await new Promise((resolve) => this.stdout.once("drain", resolve));
+			}
 		}
 
 		// Handle incoming messages
@@ -125,8 +89,9 @@ export class AttachClient {
 	/**
 	 * Send a request and wait for response
 	 */
-	private request(socket: net.Socket, request: { id: string; type: "request"; args: any }): Promise<any> {
+	private requestAttach(sessionId: string): Promise<AttachResult> {
 		return new Promise((resolve, reject) => {
+			const request = createRequest({ action: "attach", id: sessionId });
 			const requestId = request.id;
 
 			// Set up one-time response handler
@@ -136,29 +101,33 @@ export class AttachClient {
 					if (line.trim()) {
 						try {
 							const response: ServerMessage = JSON.parse(line);
-							if (response.id === requestId && response.type === "response") {
-								socket.removeListener("data", handleData);
+							if (response.type === "response" && response.id === requestId) {
+								this.socket?.removeListener("data", handleData);
 								const res = response as ServerResponse;
 								if (res.error) {
 									reject(new Error(res.error));
 								} else {
-									resolve(res.result);
+									if (!res.result || typeof res.result !== "object") {
+										reject(new Error("Invalid response format"));
+										return;
+									}
+									resolve(res.result as AttachResult);
 								}
 								return;
 							}
-						} catch (err) {
+						} catch (_err) {
 							// Continue looking
 						}
 					}
 				}
 			};
 
-			socket.on("data", handleData);
-			socket.write(JSON.stringify(request) + "\n");
+			this.socket?.on("data", handleData);
+			this.socket?.write(`${JSON.stringify(request)}\n`);
 
 			// Timeout after 5 seconds
 			setTimeout(() => {
-				socket.removeListener("data", handleData);
+				this.socket?.removeListener("data", handleData);
 				reject(new Error("Request timeout"));
 			}, 5000);
 		});
@@ -169,11 +138,13 @@ export class AttachClient {
 	 */
 	private handleMessage(message: ServerMessage): void {
 		if (message.type === "event") {
-			const event = message as ServerEvent;
-			if (event.event === "output" && event.sessionId === this.attachedSession) {
-				// Write output to stdout
-				if (typeof event.data === "string") {
-					this.stdout.write(event.data);
+			if (message.event === "output" && message.sessionId === this.attachedSession) {
+				if (!this.stdout.write(message.data)) {
+					// Handle backpressure - pause reading from socket until stdout drains
+					this.socket?.pause();
+					this.stdout.once("drain", () => {
+						this.socket?.resume();
+					});
 				}
 			}
 		}
@@ -198,9 +169,9 @@ export class AttachClient {
 
 		// Handle input
 		this.stdin.on("data", (data) => {
-			// Check for Ctrl+Q to detach
-			if (data[0] === 0x11) {
-				// Ctrl+Q
+			// Check for Ctrl+B to detach
+			if (data[0] === 0x02) {
+				// Ctrl+B
 				this.detach();
 				return;
 			}
@@ -213,7 +184,13 @@ export class AttachClient {
 					data: data.toString(),
 					submit: false,
 				});
-				this.socket.write(`${JSON.stringify(message)}\n`);
+				if (!this.socket.write(`${JSON.stringify(message)}\n`)) {
+					// Handle backpressure - pause stdin until socket drains
+					this.stdin.pause();
+					this.socket.once("drain", () => {
+						this.stdin.resume();
+					});
+				}
 			}
 		});
 

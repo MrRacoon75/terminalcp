@@ -20,7 +20,7 @@ class WriteQueue {
 	}
 }
 
-export interface ManagedProcess {
+export interface ManagedTerminal {
 	id: string;
 	command: string;
 	cwd: string;
@@ -31,20 +31,19 @@ export interface ManagedProcess {
 	lastStreamReadPosition: number;
 	terminalWriteQueue: WriteQueue;
 	ptyWriteQueue: WriteQueue;
+	running: boolean;
+	exitCode?: number;
 }
 
-export class SimpleProcessManager {
-	private processes = new Map<string, ManagedProcess>();
+export class TerminalManager {
+	private processes = new Map<string, ManagedTerminal>();
 	private outputHandlers = new Map<string, (sessionId: string, data: string) => void>();
 
 	/**
 	 * Start a new process with virtual terminal
 	 */
 	async start(command: string, options?: { cwd?: string; name?: string }): Promise<string> {
-		// Use name as ID, or generate one if not provided
 		const id = options?.name || `proc-${crypto.randomBytes(6).toString("hex")}`;
-
-		// Check if session already exists
 		if (this.processes.has(id)) {
 			throw new Error(`Session '${id}' already exists`);
 		}
@@ -57,7 +56,6 @@ export class SimpleProcessManager {
 			convertEol: true,
 		});
 
-		// Use node-pty to create a pseudo-terminal
 		const proc = pty.spawn(process.env.SHELL || "/bin/bash", ["-c", command], {
 			name: "xterm-256color",
 			cols: 80,
@@ -71,8 +69,7 @@ export class SimpleProcessManager {
 			} as { [key: string]: string },
 		});
 
-		// Create process entry
-		const processEntry: ManagedProcess = {
+		const processEntry: ManagedTerminal = {
 			id,
 			command,
 			cwd: options?.cwd || process.cwd(),
@@ -83,41 +80,37 @@ export class SimpleProcessManager {
 			lastStreamReadPosition: 0,
 			terminalWriteQueue: new WriteQueue(),
 			ptyWriteQueue: new WriteQueue(),
+			running: true,
 		};
 
-		// Capture output from PTY
 		proc.onData((data) => {
-			// Store the raw output exactly as received
-			processEntry.rawOutput += data;
-
-			// Queue terminal write to prevent race conditions
 			processEntry.terminalWriteQueue.enqueue(async () => {
+				processEntry.rawOutput += data;
 				await new Promise<void>((resolve) => {
 					terminal.write(data, () => resolve());
 				});
+				const handler = this.outputHandlers.get(id);
+				if (handler) {
+					handler(id, data);
+				}
 			});
-
-			// Notify output handler if registered
-			const handler = this.outputHandlers.get(id);
-			if (handler) {
-				handler(id, data);
-			}
 		});
 
-		// Handle process exit
 		proc.onExit((exitCode) => {
 			const code = exitCode.exitCode;
 			const signal = exitCode.signal;
 			const exitMsg = `\n[Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}]\n`;
-			processEntry.rawOutput += exitMsg;
-			// Queue terminal write for exit message
+
+			// Mark process as not running
+			processEntry.running = false;
+			processEntry.exitCode = code;
+
 			processEntry.terminalWriteQueue.enqueue(async () => {
+				processEntry.rawOutput += exitMsg;
 				await new Promise<void>((resolve) => {
 					terminal.write(exitMsg, () => resolve());
 				});
 			});
-			// Keep the process in the map so users can still query its output
-			// Users must explicitly call "stop" to clean up
 		});
 
 		this.processes.set(id, processEntry);
@@ -132,11 +125,7 @@ export class SimpleProcessManager {
 		if (!proc) {
 			throw new Error(`Process not found: ${id}`);
 		}
-
-		// Kill the process
 		proc.process.kill();
-
-		// Remove from map
 		this.processes.delete(id);
 	}
 
@@ -262,7 +251,7 @@ export class SimpleProcessManager {
 			command: p.command,
 			cwd: p.cwd,
 			startedAt: p.startedAt.toISOString(),
-			running: p.process.pid !== undefined,
+			running: p.running,
 			pid: p.process.pid,
 		}));
 	}
@@ -270,7 +259,7 @@ export class SimpleProcessManager {
 	/**
 	 * Get a specific process
 	 */
-	getProcess(id: string): ManagedProcess | undefined {
+	getProcess(id: string): ManagedTerminal | undefined {
 		return this.processes.get(id);
 	}
 

@@ -1,24 +1,21 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import type {
-	Args,
-	AttachResult,
-	ServerEvent,
-	ServerMessage,
-	ServerRequest,
-	ServerResponse,
-	TermSizeResult,
-} from "./messages.js";
-import { SimpleProcessManager } from "./terminal-manager.js";
+import { fileURLToPath } from "node:url";
+import type { ServerEvent, ServerMessage, ServerRequest, ServerResponse } from "./messages.js";
+import { TerminalManager } from "./terminal-manager.js";
 
-// Re-export for backward compatibility
-export type { ServerMessage } from "./messages.js";
+// Read version from package.json
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJsonPath = path.join(__dirname, "..", "package.json");
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+const SERVER_VERSION = packageJson.version;
 
 export class TerminalServer {
-	private processManager = new SimpleProcessManager();
+	private processManager = new TerminalManager();
 	private server?: net.Server;
 	private clients = new Map<string, net.Socket>();
 	private sessionSubscribers = new Map<string, Set<string>>(); // sessionId -> Set<clientId>
@@ -86,7 +83,7 @@ export class TerminalServer {
 			for (const line of lines) {
 				if (line.trim()) {
 					try {
-						const message: ServerMessage = JSON.parse(line);
+						const message: ServerRequest = JSON.parse(line);
 						this.handleMessage(clientId, message);
 					} catch (err) {
 						console.error(`Failed to parse message from ${clientId}:`, err);
@@ -114,25 +111,20 @@ export class TerminalServer {
 	/**
 	 * Handle a message from a client
 	 */
-	private async handleMessage(clientId: string, message: ServerMessage): Promise<void> {
-		if (message.type !== "request") {
-			return; // Ignore non-request messages from clients
-		}
+	private async handleMessage(clientId: string, message: ServerRequest): Promise<void> {
+		const { id: requestId, args } = message;
 
-		const request = message as ServerRequest;
-		const { id: requestId, args } = request;
-
-		if (!requestId || !args) {
+		if (!requestId || !args.action) {
 			this.sendError(clientId, requestId || "unknown", "Missing required fields");
 			return;
 		}
 
 		try {
-			let result: string | AttachResult | TermSizeResult | null = null;
+			let result: string | { rows: number; cols: number; rawOutput: string } = "";
 
 			switch (args.action) {
 				case "start": {
-					const { command, cwd, name } = args;
+					const { command, cwd, name } = args || {};
 					if (!command) {
 						throw new Error("Missing required field: command");
 					}
@@ -140,21 +132,26 @@ export class TerminalServer {
 
 					// Register output handler for this session
 					this.processManager.onOutput(sessionId, (id, data) => {
-						this.broadcastEvent(id, "output", data);
+						this.broadcastEvent({
+							type: "event",
+							event: "output",
+							sessionId: id,
+							data,
+						});
 					});
 
 					// Auto-subscribe the creator to this session
 					if (!this.sessionSubscribers.has(sessionId)) {
 						this.sessionSubscribers.set(sessionId, new Set());
 					}
-					this.sessionSubscribers.get(sessionId)!.add(clientId);
+					this.sessionSubscribers.get(sessionId)?.add(clientId);
 
 					result = sessionId;
 					break;
 				}
 
 				case "stop": {
-					const { id } = args;
+					const { id } = args || {};
 					if (!id) {
 						// Stop all
 						const processes = this.processManager.listProcesses();
@@ -174,18 +171,18 @@ export class TerminalServer {
 				}
 
 				case "stdin": {
-					const { id, data, submit } = args;
+					const { id, data, submit } = args || {};
 					if (!id || data === undefined) {
 						throw new Error("Missing required fields: id, data");
 					}
 					const inputData = submit ? `${data}\r` : data;
 					await this.processManager.sendInput(id, inputData);
-					result = null; // No response for stdin
+					result = ""; // Return empty string for stdin
 					break;
 				}
 
 				case "stdout": {
-					const { id, lines } = args;
+					const { id, lines } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -194,7 +191,7 @@ export class TerminalServer {
 				}
 
 				case "stream": {
-					const { id, since_last, strip_ansi } = args;
+					const { id, since_last, strip_ansi } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -210,17 +207,17 @@ export class TerminalServer {
 				}
 
 				case "term-size": {
-					const { id } = args;
+					const { id } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
 					const size = this.processManager.getTerminalSize(id);
-					result = size as TermSizeResult;
+					result = `${size.rows} ${size.cols} ${size.scrollback_lines}`;
 					break;
 				}
 
 				case "attach": {
-					const { id } = args;
+					const { id } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -234,20 +231,19 @@ export class TerminalServer {
 					if (!this.sessionSubscribers.has(id)) {
 						this.sessionSubscribers.set(id, new Set());
 					}
-					this.sessionSubscribers.get(id)!.add(clientId);
+					this.sessionSubscribers.get(id)?.add(clientId);
 
 					// Send initial terminal state
 					result = {
-						sessionId: id,
 						cols: proc.terminal.cols,
 						rows: proc.terminal.rows,
 						rawOutput: proc.rawOutput,
-					} as AttachResult;
+					};
 					break;
 				}
 
 				case "resize": {
-					const { id, cols, rows } = args;
+					const { id, cols, rows } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -255,13 +251,19 @@ export class TerminalServer {
 					this.processManager.resizeTerminal(id, cols, rows);
 
 					// Broadcast resize to other clients
-					this.broadcastEvent(id, "resize", { cols, rows });
-					result = null; // No response needed
+					this.broadcastEvent({
+						type: "event",
+						event: "resize",
+						sessionId: id,
+						cols,
+						rows,
+					});
+					result = ""; // Return empty string for resize
 					break;
 				}
 
 				case "detach": {
-					const { id } = args;
+					const { id } = args || {};
 					if (!id) {
 						throw new Error("Missing required field: id");
 					}
@@ -283,14 +285,14 @@ export class TerminalServer {
 					return;
 				}
 
-				default:
-					throw new Error(`Unknown action: ${(args as any).action}`);
+				case "version": {
+					result = SERVER_VERSION;
+					break;
+				}
 			}
 
-			// Send response (unless it's stdin which returns null)
-			if (result !== null) {
-				this.sendResponse(clientId, requestId, result);
-			}
+			// Send response
+			this.sendResponse(clientId, requestId, result);
 		} catch (err) {
 			const error = err instanceof Error ? err.message : String(err);
 			this.sendError(clientId, requestId, error);
@@ -300,17 +302,17 @@ export class TerminalServer {
 	/**
 	 * Send a response to a client
 	 */
-	private sendResponse(clientId: string, requestId: string, result: string | AttachResult | TermSizeResult): void {
+	private sendResponse(clientId: string, requestId: string, result: ServerResponse["result"]): void {
 		const socket = this.clients.get(clientId);
 		if (!socket || socket.destroyed) return;
 
-		const response: ServerResponse = {
+		const response: ServerMessage = {
 			id: requestId,
 			type: "response",
 			result,
 		};
 
-		socket.write(JSON.stringify(response) + "\n");
+		socket.write(`${JSON.stringify(response)}\n`);
 	}
 
 	/**
@@ -320,36 +322,19 @@ export class TerminalServer {
 		const socket = this.clients.get(clientId);
 		if (!socket || socket.destroyed) return;
 
-		const response: ServerResponse = {
+		const response: ServerMessage = {
 			id: requestId,
 			type: "response",
 			error,
 		};
 
-		socket.write(JSON.stringify(response) + "\n");
+		socket.write(`${JSON.stringify(response)}\n`);
 	}
 
-	/**
-	 * Broadcast an event to subscribed clients
-	 */
-	private broadcastEvent(
-		sessionId: string,
-		event: "output" | "exit" | "resize",
-		data: string | { cols: number; rows: number } | { exitCode: number },
-	): void {
-		const subscribers = this.sessionSubscribers.get(sessionId);
+	private broadcastEvent(event: ServerEvent): void {
+		const subscribers = this.sessionSubscribers.get(event.sessionId);
 		if (!subscribers) return;
-
-		const message: ServerEvent = {
-			id: `event-${Date.now()}`,
-			type: "event",
-			event,
-			sessionId,
-			data,
-		};
-
-		const messageStr = JSON.stringify(message) + "\n";
-
+		const messageStr = `${JSON.stringify(event)}\n`;
 		for (const clientId of subscribers) {
 			const socket = this.clients.get(clientId);
 			if (socket && !socket.destroyed) {
@@ -377,17 +362,56 @@ export class TerminalServer {
 			this.server.close();
 		}
 
-		// Remove socket file
+		// Remove the socket file
 		if (fs.existsSync(this.serverSocketPath)) {
 			try {
 				fs.unlinkSync(this.serverSocketPath);
-			} catch (err) {
-				// Ignore
+			} catch (_err) {
+				// Ignore if already removed
 			}
 		}
 
 		process.exit(0);
 	}
+}
+
+export async function startServer(): Promise<void> {
+	// Determine how to start the server
+	let command: string;
+	let args: string[];
+
+	// Check if we're running via tsx (development) or from dist
+	const scriptPath = new URL(import.meta.url).pathname;
+	const isTypescript = scriptPath.includes("/src/");
+
+	if (isTypescript) {
+		// Development mode: compile and run with node
+		// Use tsx directly as the command
+		const tsxPath = path.join(process.cwd(), "node_modules", ".bin", "tsx");
+		if (fs.existsSync(tsxPath)) {
+			command = tsxPath;
+			args = [path.join(path.dirname(scriptPath), "index.ts"), "--server"];
+		} else {
+			// Fallback to npx tsx
+			command = "npx";
+			args = ["tsx", path.join(path.dirname(scriptPath), "index.ts"), "--server"];
+		}
+	} else {
+		// Production mode: run the compiled JavaScript
+		command = process.execPath;
+		args = [path.join(path.dirname(scriptPath), "index.js"), "--server"];
+	}
+
+	const serverProcess = spawn(command, args, {
+		detached: true,
+		stdio: "ignore",
+		cwd: process.cwd(),
+	});
+
+	serverProcess.unref(); // Allow parent to exit independently
+
+	// Give the server a moment to start
+	await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
 // If run directly, start the server
