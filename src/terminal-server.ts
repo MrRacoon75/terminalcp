@@ -19,7 +19,7 @@ export class TerminalServer {
 	private server?: net.Server;
 	private clients = new Map<string, net.Socket>();
 	private sessionSubscribers = new Map<string, Set<string>>(); // sessionId -> Set<clientId>
-	private serverSocketPath = path.join(os.homedir(), ".terminalcp", "server.sock");
+	public readonly serverSocketPath = path.join(os.homedir(), ".terminalcp", "server.sock");
 	private clientCounter = 0;
 
 	constructor() {
@@ -71,8 +71,6 @@ export class TerminalServer {
 		const clientId = `client-${++this.clientCounter}`;
 		this.clients.set(clientId, socket);
 
-		console.error(`Client connected: ${clientId}`);
-
 		let buffer = "";
 
 		socket.on("data", (data) => {
@@ -94,7 +92,6 @@ export class TerminalServer {
 		});
 
 		socket.on("close", () => {
-			console.error(`Client disconnected: ${clientId}`);
 			this.clients.delete(clientId);
 
 			// Remove client from all session subscriptions
@@ -424,6 +421,23 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	});
 
 	// Handle shutdown signals
-	process.on("SIGINT", () => server.shutdown());
-	process.on("SIGTERM", () => server.shutdown());
+	process.on("SIGINT", async () => {
+		await server.shutdown();
+	});
+	process.on("SIGTERM", async () => {
+		await server.shutdown();
+	});
+	process.on("SIGQUIT", async () => {
+		await server.shutdown();
+	});
+	process.on("exit", () => {
+		// Last-ditch cleanup on any exit
+		if (fs.existsSync(server.serverSocketPath)) {
+			try {
+				fs.unlinkSync(server.serverSocketPath);
+			} catch (_err) {
+				// Ignore
+			}
+		}
+	});
 }

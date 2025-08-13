@@ -17,8 +17,85 @@ const CLIENT_VERSION = packageJson.version;
 // Parse CLI arguments
 const args = process.argv.slice(2);
 
-// Check if running in CLI mode
-if (args.length > 0) {
+// Show help if no arguments
+if (args.length === 0) {
+	console.log(`terminalcp - Terminal Control Protocol
+A centralized terminal session manager with MCP server support
+
+USAGE:
+  terminalcp --mcp                       Start as MCP server for Claude Desktop
+  terminalcp --server                    Start the terminal server daemon
+  terminalcp <command> [options]         Run a CLI command
+
+COMMANDS:
+  list, ls                               List all active sessions
+  start <id> <command>                   Start a new named session
+  stop [id]                              Stop session(s) (all if no id given)
+  attach <id>                            Attach to a session interactively
+  stdout <id> [lines]                    Get terminal output (rendered view)
+  stream <id> [opts]                     Get raw output stream
+  stdin <id> <data> [--submit]           Send input to a session
+  resize <id> <cols> <rows>              Resize terminal dimensions
+  term-size <id>                         Get terminal size
+  version                                Show client and server versions
+  kill-server                            Shutdown the terminal server
+
+EXAMPLES:
+  # Start as MCP server for Claude Desktop
+  terminalcp --mcp
+
+  # Start a development server
+  terminalcp start dev-server "npm run dev"
+  
+  # Start an interactive Python session
+  terminalcp start python "python3 -i"
+  terminalcp stdin python "print('Hello')" --submit
+  terminalcp stdout python
+  
+  # Debug with lldb
+  terminalcp start debug "lldb ./myapp"
+  terminalcp stdin debug "b main" --submit
+  terminalcp stdin debug "run" --submit
+  terminalcp attach debug  # Interactive debugging
+  
+  # Monitor build output
+  terminalcp start build "npm run build"
+  terminalcp stream build --since-last
+  
+  # Attach to interact with a session
+  terminalcp attach python
+  # Press Ctrl+B to detach
+
+OPTIONS:
+  --mcp                                  Run as MCP server on stdio
+  --server                               Run as terminal server daemon
+  --since-last                           Only show new output (stream)
+  --with-ansi                            Keep ANSI codes (stream)
+  --submit                               Add Enter key after input (stdin)
+
+CLAUDE DESKTOP CONFIGURATION:
+  Add to claude_desktop_config.json:
+  {
+    "mcpServers": {
+      "terminalcp": {
+        "command": "npx",
+        "args": ["-y", "@mariozechner/terminalcp", "--mcp"]
+      }
+    }
+  }
+
+For more information: https://github.com/badlogic/terminalcp`);
+	process.exit(0);
+}
+
+// Check if running in MCP server mode
+if (args[0] === "--mcp") {
+	// MCP server mode
+	runMCPServer().catch((error) => {
+		console.error("Fatal error:", error);
+		process.exit(1);
+	});
+} else if (args.length > 0) {
 	if (args[0] === "ls" || args[0] === "list") {
 		const client = new TerminalClient();
 		client
@@ -210,26 +287,8 @@ if (args.length > 0) {
 			process.exit(1);
 		});
 	} else {
-		console.error(`Unknown command or session: ${args[0]}`);
-		console.error("Usage:");
-		console.error("  terminalcp                       - Start MCP server");
-		console.error("  terminalcp ls                    - List active sessions");
-		console.error("  terminalcp start <id> <cmd>      - Start a new session");
-		console.error("  terminalcp stop [id]             - Stop session(s)");
-		console.error("  terminalcp attach <id>           - Attach to a session");
-		console.error("  terminalcp stdout <id> [lines]   - Get terminal output");
-		console.error("  terminalcp stream <id> [opts]    - Get raw stream (--since-last, --with-ansi)");
-		console.error("  terminalcp stdin <id> <data>     - Send input (--submit adds Enter)");
-		console.error("  terminalcp term-size <id>        - Get terminal size");
-		console.error("  terminalcp resize <id> <c> <r>   - Resize terminal");
-		console.error("  terminalcp version               - Check server and client version");
-		console.error("  terminalcp kill-server           - Kill the terminal server");
+		console.error(`Unknown command: ${args[0]}`);
+		console.error("Run 'terminalcp' without arguments to see help");
 		process.exit(1);
 	}
-} else {
-	// MCP server mode
-	runMCPServer().catch((error) => {
-		console.error("Fatal error:", error);
-		process.exit(1);
-	});
 }

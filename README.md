@@ -46,7 +46,7 @@ First, install the terminalcp MCP server with your client.
   "mcpServers": {
     "terminalcp": {
       "command": "npx",
-      "args": ["@mariozechner/terminalcp@latest"]
+      "args": ["@mariozechner/terminalcp@latest", "--mcp"]
     }
   }
 }
@@ -58,7 +58,7 @@ First, install the terminalcp MCP server with your client.
 Use the Claude Code CLI to add the terminalcp server:
 
 ```bash
-claude mcp add -s user terminalcp npx @mariozechner/terminalcp@latest
+claude mcp add -s user terminalcp npx @mariozechner/terminalcp@latest --mcp
 ```
 </details>
 
@@ -72,7 +72,7 @@ Follow the MCP install [guide](https://modelcontextprotocol.io/quickstart/user),
 <details>
 <summary>Cursor</summary>
 
-Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name it "terminalcp", use `command` type with the command `npx @mariozechner/terminalcp@latest`.
+Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name it "terminalcp", use `command` type with the command `npx @mariozechner/terminalcp@latest --mcp`.
 
 </details>
 
@@ -83,7 +83,7 @@ Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/m
 
 ```bash
 # For VS Code
-code --add-mcp '{"name":"terminalcp","command":"npx","args":["@mariozechner/terminalcp@latest"]}'
+code --add-mcp '{"name":"terminalcp","command":"npx","args":["@mariozechner/terminalcp@latest","--mcp"]}'
 ```
 
 After installation, the terminalcp server will be available for use with your GitHub Copilot agent in VS Code.
@@ -425,7 +425,7 @@ npm install
 npm run build
 
 # Run tests
-npm run test
+npm test
 
 # Run checks (linting, formatting, type checking)
 npm run check
@@ -451,11 +451,11 @@ screen -dmS debug -L lldb myapp
 #### Sending input
 ```bash
 # terminalcp
-{"action": "stdin", "id": "debug", "data": "break main", "submit": true}
+{"action": "stdin", "id": "debug", "data": "b main", "submit": true}
 # Returns: ""
 
 # screen equivalent
-screen -S debug -X stuff $'break main\n'
+screen -S debug -X stuff $'b main\n'
 # No confirmation the command was received
 ```
 

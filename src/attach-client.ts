@@ -95,8 +95,12 @@ export class AttachClient {
 			const requestId = request.id;
 
 			// Set up one-time response handler
+			let buffer = "";
 			const handleData = (data: Buffer) => {
-				const lines = data.toString().split("\n");
+				buffer += data.toString();
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
 				for (const line of lines) {
 					if (line.trim()) {
 						try {
@@ -123,12 +127,18 @@ export class AttachClient {
 			};
 
 			this.socket?.on("data", handleData);
-			this.socket?.write(`${JSON.stringify(request)}\n`);
+
+			const requestStr = `${JSON.stringify(request)}\n`;
+			this.socket?.write(requestStr, (err) => {
+				if (err) {
+					reject(new Error(`Failed to send request: ${err.message}`));
+				}
+			});
 
 			// Timeout after 5 seconds
 			setTimeout(() => {
 				this.socket?.removeListener("data", handleData);
-				reject(new Error("Request timeout"));
+				reject(new Error(`Request timeout - no response for request ${requestId}`));
 			}, 5000);
 		});
 	}
