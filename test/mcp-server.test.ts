@@ -3,6 +3,10 @@ import { after, before, describe, it } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+interface MCPResult {
+	content: Array<{ type: string; text: string }>;
+}
+
 describe("MCP Server", () => {
 	let client: Client;
 	let transport: StdioClientTransport;
@@ -13,7 +17,7 @@ describe("MCP Server", () => {
 		transport = new StdioClientTransport({
 			command: "npx",
 			args: ["tsx", "src/index.ts"],
-			env: process.env,
+			env: process.env as Record<string, string>,
 		});
 
 		client = new Client(
@@ -56,7 +60,7 @@ describe("MCP Server", () => {
 	});
 
 	it("should start a process", async () => {
-		const result = await client.callTool({
+		const result = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -65,7 +69,7 @@ describe("MCP Server", () => {
 					name: "test-echo",
 				},
 			},
-		});
+		})) as MCPResult;
 
 		const processId = result.content[0].text;
 		assert.strictEqual(processId, "test-echo", "Should return the process ID");
@@ -73,7 +77,7 @@ describe("MCP Server", () => {
 
 	it("should get process output", async () => {
 		// Start a process first
-		const startResult = await client.callTool({
+		const startResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -81,14 +85,14 @@ describe("MCP Server", () => {
 					command: "echo 'Test output'",
 				},
 			},
-		});
+		})) as MCPResult;
 		const processId = startResult.content[0].text;
 
 		// Wait for output
 		await new Promise((resolve) => setTimeout(resolve, 500));
 
 		// Get output
-		const outputResult = await client.callTool({
+		const outputResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -96,19 +100,19 @@ describe("MCP Server", () => {
 					id: processId,
 				},
 			},
-		});
+		})) as MCPResult;
 
 		const output = outputResult.content[0].text;
 		assert.ok(output.includes("Test output"), "Output should contain the echoed text");
 	});
 
 	it("should list processes", async () => {
-		const result = await client.callTool({
+		const result = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: { action: "list" },
 			},
-		});
+		})) as MCPResult;
 
 		const processList = result.content[0].text;
 		assert.ok(typeof processList === "string", "Should return a string of processes");
@@ -116,7 +120,7 @@ describe("MCP Server", () => {
 
 	it("should handle interactive process", async () => {
 		// Start interactive process
-		const startResult = await client.callTool({
+		const startResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -125,7 +129,7 @@ describe("MCP Server", () => {
 					name: "interactive-cat",
 				},
 			},
-		});
+		})) as MCPResult;
 		const processId = startResult.content[0].text;
 
 		// Send input
@@ -145,7 +149,7 @@ describe("MCP Server", () => {
 		await new Promise((resolve) => setTimeout(resolve, 200));
 
 		// Get output
-		const outputResult = await client.callTool({
+		const outputResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -153,7 +157,7 @@ describe("MCP Server", () => {
 					id: processId,
 				},
 			},
-		});
+		})) as MCPResult;
 
 		const output = outputResult.content[0].text;
 		assert.ok(output.includes("Test input"), "Should echo the input");
@@ -184,7 +188,7 @@ describe("MCP Server", () => {
 		});
 
 		// Stop it
-		const stopResult = await client.callTool({
+		const stopResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -192,7 +196,7 @@ describe("MCP Server", () => {
 					id: "test-stop",
 				},
 			},
-		});
+		})) as MCPResult;
 
 		const result = stopResult.content[0].text;
 		assert.ok(result.includes("stopped"), "Should confirm process stopped");
@@ -212,7 +216,7 @@ describe("MCP Server", () => {
 		});
 
 		// Get terminal size
-		const sizeResult = await client.callTool({
+		const sizeResult = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
@@ -220,7 +224,7 @@ describe("MCP Server", () => {
 					id: "test-size",
 				},
 			},
-		});
+		})) as MCPResult;
 
 		const sizeText = sizeResult.content[0].text;
 		const [rows, cols] = sizeText.split(" ").map(Number);
@@ -240,12 +244,12 @@ describe("MCP Server", () => {
 	});
 
 	it("should check version", async () => {
-		const result = await client.callTool({
+		const result = (await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: { action: "version" },
 			},
-		});
+		})) as MCPResult;
 
 		const version = result.content[0].text;
 		assert.ok(version.match(/^\d+\.\d+\.\d+$/), "Should return a valid version string");

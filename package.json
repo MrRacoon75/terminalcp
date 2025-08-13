@@ -11,7 +11,7 @@
 		"build": "tsc && chmod +x dist/index.js",
 		"clean": "rm -rf dist",
 		"prepublishOnly": "npm run clean && npm run build",
-		"check": "biome check --write . && tsc --noEmit",
+		"check": "biome check --write . && tsc --project tsconfig.check.json",
 		"prepare": "husky",
 		"test": "tsx test/terminal-manager.test.ts && tsx test/mcp-server.test.ts"
 	},
