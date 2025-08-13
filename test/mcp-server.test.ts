@@ -48,8 +48,7 @@ async function testMCPServer() {
 				},
 			},
 		});
-		const startData = JSON.parse(startResult.content[0].text);
-		const processId = startData.id;
+		const processId = startResult.content[0].text;
 		console.log(`✓ Process started with ID: ${processId}`);
 
 		// Give process time to execute
@@ -91,7 +90,7 @@ async function testMCPServer() {
 				},
 			},
 		});
-		const interactiveId = JSON.parse(interactiveResult.content[0].text).id;
+		const interactiveId = interactiveResult.content[0].text;
 		console.log(`✓ Interactive process started with ID: ${interactiveId}`);
 
 		// Send input
