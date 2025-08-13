@@ -172,8 +172,11 @@ export class TerminalServer {
 					if (!id || data === undefined) {
 						throw new Error("Missing required fields: id, data");
 					}
-					const inputData = submit ? `${data}\r` : data;
-					await this.processManager.sendInput(id, inputData);
+					await this.processManager.sendInput(id, data);
+					if (submit) {
+						await new Promise((resolve) => setTimeout(resolve, 100));
+						await this.processManager.sendInput(id, "\r"); // Append Enter key
+					}
 					result = ""; // Return empty string for stdin
 					break;
 				}
