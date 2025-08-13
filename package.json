@@ -9,12 +9,11 @@
 	},
 	"scripts": {
 		"build": "tsc && chmod +x dist/index.js",
-		"dev": "tsx src/index.ts",
 		"clean": "rm -rf dist",
 		"prepublishOnly": "npm run clean && npm run build",
 		"check": "biome check --write . && tsc --noEmit",
 		"prepare": "husky",
-		"test": "tsx test/mcp-server.test.ts"
+		"test": "tsx test/terminal-manager.test.ts && tsx test/mcp-server.test.ts"
 	},
 	"files": [
 		"dist/**/*",

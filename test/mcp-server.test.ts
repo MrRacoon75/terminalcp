@@ -1,97 +1,132 @@
-#!/usr/bin/env node
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { spawn } from "node:child_process";
 
-async function testMCPServer() {
-	console.log("Starting MCP server test...");
+describe("MCP Server", () => {
+	let client: Client;
+	let transport: StdioClientTransport;
 
-	// Spawn the MCP server
-	const serverProcess = spawn("npx", ["tsx", "src/index.ts"], {
-		stdio: ["pipe", "pipe", "pipe"],
-		cwd: process.cwd(),
-	});
+	// Setup before all tests
+	before(async () => {
+		// Create client and connect
+		transport = new StdioClientTransport({
+			command: "npx",
+			args: ["tsx", "src/index.ts"],
+			env: process.env,
+		});
 
-	// Create MCP client
-	const transport = new StdioClientTransport({
-		command: "npx",
-		args: ["tsx", "src/index.ts"],
-	});
+		client = new Client(
+			{
+				name: "test-client",
+				version: "1.0.0",
+			},
+			{
+				capabilities: {},
+			}
+		);
 
-	const client = new Client(
-		{
-			name: "test-client",
-			version: "1.0.0",
-		},
-		{
-			capabilities: {},
-		},
-	);
-
-	try {
-		// Connect to server
 		await client.connect(transport);
-		console.log("✓ Connected to MCP server");
+	});
 
-		// List available tools
+	// Cleanup after all tests
+	after(async () => {
+		// Stop all processes first
+		try {
+			await client.callTool({
+				name: "terminal",
+				arguments: {
+					args: { action: "stop" }
+				}
+			});
+		} catch (err) {
+			// Ignore errors during cleanup
+		}
+
+		// Close client connection
+		await client.close();
+	});
+
+	it("should list available tools", async () => {
 		const tools = await client.listTools();
-		console.log("✓ Available tools:", tools.tools?.map((t) => t.name).join(", "));
+		assert.ok(tools.tools.length > 0, "Should have at least one tool");
+		
+		const terminalTool = tools.tools.find((t) => t.name === "terminal");
+		assert.ok(terminalTool, "Should have terminal tool");
+	});
 
-		// Test: Start a process
-		console.log("\nTest 1: Starting a process...");
+	it("should start a process", async () => {
+		const result = await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: {
+					action: "start",
+					command: "echo 'Hello from MCP test'",
+					name: "test-echo"
+				}
+			}
+		});
+
+		const processId = result.content[0].text;
+		assert.strictEqual(processId, "test-echo", "Should return the process ID");
+	});
+
+	it("should get process output", async () => {
+		// Start a process first
 		const startResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "start",
-					command: "bash -c 'echo Hello from MCP test!; sleep 2; echo Done'",
-				},
-			},
+					command: "echo 'Test output'"
+				}
+			}
 		});
 		const processId = startResult.content[0].text;
-		console.log(`✓ Process started with ID: ${processId}`);
 
-		// Give process time to execute
-		await new Promise((resolve) => setTimeout(resolve, 1000));
+		// Wait for output
+		await new Promise(resolve => setTimeout(resolve, 500));
 
-		// Test: Get output
-		console.log("\nTest 2: Getting process output...");
+		// Get output
 		const outputResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "stdout",
-					id: processId,
-				},
-			},
+					id: processId
+				}
+			}
 		});
-		console.log("✓ Process output:", outputResult.content[0].text);
 
-		// Test: List processes
-		console.log("\nTest 3: Listing processes...");
-		const listResult = await client.callTool({
+		const output = outputResult.content[0].text;
+		assert.ok(output.includes("Test output"), "Output should contain the echoed text");
+	});
+
+	it("should list processes", async () => {
+		const result = await client.callTool({
 			name: "terminal",
 			arguments: {
-				args: {
-					action: "list",
-				},
-			},
+				args: { action: "list" }
+			}
 		});
-		console.log("✓ Active processes:", listResult.content[0].text);
 
-		// Test: Send input to process
-		console.log("\nTest 4: Starting interactive process and sending input...");
-		const interactiveResult = await client.callTool({
+		const processList = result.content[0].text;
+		assert.ok(typeof processList === "string", "Should return a string of processes");
+	});
+
+	it("should handle interactive process", async () => {
+		// Start interactive process
+		const startResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "start",
 					command: "cat",
-				},
-			},
+					name: "interactive-cat"
+				}
+			}
 		});
-		const interactiveId = interactiveResult.content[0].text;
-		console.log(`✓ Interactive process started with ID: ${interactiveId}`);
+		const processId = startResult.content[0].text;
 
 		// Send input
 		await client.callTool({
@@ -99,63 +134,120 @@ async function testMCPServer() {
 			arguments: {
 				args: {
 					action: "stdin",
-					id: interactiveId,
-					data: "Test input line\n",
-				},
-			},
+					id: processId,
+					data: "Test input",
+					submit: true
+				}
+			}
 		});
-		console.log("✓ Sent input to process");
 
-		// Get output after input
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		const interactiveOutput = await client.callTool({
+		// Wait for echo
+		await new Promise(resolve => setTimeout(resolve, 200));
+
+		// Get output
+		const outputResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "stdout",
-					id: interactiveId,
-				},
-			},
+					id: processId
+				}
+			}
 		});
-		console.log("✓ Process echoed:", interactiveOutput.content[0].text);
 
-		// Test: Stop process
-		console.log("\nTest 5: Stopping processes...");
+		const output = outputResult.content[0].text;
+		assert.ok(output.includes("Test input"), "Should echo the input");
+
+		// Stop the process
 		await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "stop",
-					id: processId,
-				},
-			},
+					id: processId
+				}
+			}
 		});
-		console.log(`✓ Stopped process ${processId}`);
+	});
 
-		await client.callTool({
+	it("should stop a specific process", async () => {
+		// Start a process
+		const startResult = await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: {
+					action: "start",
+					command: "sleep 60",
+					name: "test-stop"
+				}
+			}
+		});
+
+		// Stop it
+		const stopResult = await client.callTool({
 			name: "terminal",
 			arguments: {
 				args: {
 					action: "stop",
-					id: interactiveId,
-				},
-			},
+					id: "test-stop"
+				}
+			}
 		});
-		console.log(`✓ Stopped process ${interactiveId}`);
 
-		console.log("\n✅ All tests passed!");
-	} catch (error) {
-		console.error("❌ Test failed:", error);
-		process.exit(1);
-	} finally {
+		const result = stopResult.content[0].text;
+		assert.ok(result.includes("stopped"), "Should confirm process stopped");
+	});
+
+	it("should get terminal size", async () => {
+		// Start a process
+		const startResult = await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-size"
+				}
+			}
+		});
+
+		// Get terminal size
+		const sizeResult = await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: {
+					action: "term-size",
+					id: "test-size"
+				}
+			}
+		});
+
+		const sizeText = sizeResult.content[0].text;
+		const [rows, cols] = sizeText.split(" ").map(Number);
+		assert.strictEqual(rows, 24, "Default rows should be 24");
+		assert.strictEqual(cols, 80, "Default cols should be 80");
+
 		// Cleanup
-		await client.close();
-		serverProcess.kill();
-	}
-}
+		await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: {
+					action: "stop",
+					id: "test-size"
+				}
+			}
+		});
+	});
 
-// Run the test
-testMCPServer().catch((error) => {
-	console.error("Fatal error:", error);
-	process.exit(1);
+	it("should check version", async () => {
+		const result = await client.callTool({
+			name: "terminal",
+			arguments: {
+				args: { action: "version" }
+			}
+		});
+
+		const version = result.content[0].text;
+		assert.ok(version.match(/^\d+\.\d+\.\d+$/), "Should return a valid version string");
+	});
 });

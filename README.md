@@ -32,8 +32,8 @@ terminalcp uses a centralized server architecture inspired by tmux:
 - **Unix domain sockets** enable direct terminal attachment from any client
 
 ## Requirements
-- Node.js 18 or newer
-- VS Code, Cursor, Windsurf, Claude Desktop, Goose or any other MCP client
+- Node.js 20 or newer
+- An MCP client (VS Code, Cursor, Windsurf, Claude Desktop, etc.)
 
 ## Getting Started
 
@@ -117,163 +117,175 @@ Then use this config:
 ```
 </details>
 
+## MCP Usage Examples
+
+### Starting and Managing Processes
+
+```json
+// Start with auto-generated ID
+{"action": "start", "command": "python3 -i"}
+// Returns: "proc-3465b9b687af"
+
+// Start with custom name (becomes the ID)
+{"action": "start", "command": "npm run dev", "name": "dev-server"}
+// Returns: "dev-server"
+
+// Start in specific directory
+{"action": "start", "command": "python3 script.py", "cwd": "/path/to/project", "name": "analyzer"}
+// Returns: "analyzer"
+```
+
+### Interacting with Running Sessions
+
+```json
+// Send input with automatic Enter key
+{"action": "stdin", "id": "dev-server", "data": "npm test", "submit": true}
+// Returns: ""
+
+// Send input without Enter (for building up commands)
+{"action": "stdin", "id": "analyzer", "data": "import numpy as np"}
+{"action": "stdin", "id": "analyzer", "data": "\r"}  // Manual Enter
+
+// Get terminal output (rendered screen)
+{"action": "stdout", "id": "dev-server"}
+// Returns: Full terminal screen with colors and formatting
+
+// Get last N lines only
+{"action": "stdout", "id": "dev-server", "lines": 50}
+```
+
+### Monitoring Long-Running Processes
+
+```json
+// Get all output as raw stream
+{"action": "stream", "id": "dev-server"}
+
+// Get only new output since last check
+{"action": "stream", "id": "dev-server", "since_last": true}
+
+// Keep ANSI color codes
+{"action": "stream", "id": "dev-server", "since_last": true, "strip_ansi": false}
+```
+
+### Process Management
+
+```json
+// List all sessions
+{"action": "list"}
+// Returns: "dev-server running /Users/you/project npm run dev\nanalyzer stopped /path/to/project python3 script.py"
+
+// Stop specific process
+{"action": "stop", "id": "dev-server"}
+// Returns: "stopped dev-server"
+
+// Stop ALL processes
+{"action": "stop"}
+// Returns: "stopped 3 processes"
+
+// Check version compatibility
+{"action": "version"}
+// Returns: "1.2.2"
+```
+
+### Interactive AI Agents Example
+
+```json
+// Start Claude with a memorable name
+{"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions", "name": "claude"}
+
+// Send a prompt
+{"action": "stdin", "id": "claude", "data": "Write a test for main.py", "submit": true}
+
+// Get the response
+{"action": "stdout", "id": "claude"}
+
+// Clean up when done
+{"action": "stop", "id": "claude"}
+```
+
+### Debugging with LLDB
+
+```json
+{"action": "start", "command": "lldb ./myapp", "name": "debugger"}
+{"action": "stdin", "id": "debugger", "data": "break main", "submit": true}
+{"action": "stdin", "id": "debugger", "data": "run", "submit": true}
+{"action": "stdout", "id": "debugger"}  // Get the formatted debugger interface
+{"action": "stdin", "id": "debugger", "data": "bt", "submit": true}  // Backtrace
+{"action": "stdout", "id": "debugger"}
+```
+
+### Build Process Monitoring
+
+```json
+{"action": "start", "command": "npm run build", "name": "build"}
+// Monitor build progress
+{"action": "stream", "id": "build", "since_last": true}
+// ... wait a bit ...
+{"action": "stream", "id": "build", "since_last": true}  // Get only new output
+```
+
 ## CLI Usage
 
-terminalcp works as a standalone CLI tool for managing terminal sessions:
+terminalcp can also be used as a standalone CLI tool:
 
 ```bash
 # List all active sessions
 terminalcp ls
 
-# Start a new session
-terminalcp start my-session "npm run dev"
+# Start a new session with a custom name
+terminalcp start my-app "npm run dev"
 
-# Attach to a session (interactive mode, Ctrl+B to detach)
-terminalcp attach my-session
+# Attach to a session interactively (Ctrl+B to detach)
+terminalcp attach my-app
 
 # Get output from a session
-terminalcp stdout my-session
-terminalcp stdout my-session 50  # Last 50 lines
+terminalcp stdout my-app
+terminalcp stdout my-app 50  # Last 50 lines
 
 # Send input to a session
-terminalcp stdin my-session "echo hello"
-terminalcp stdin my-session "npm test" --submit  # Auto-press Enter
+terminalcp stdin my-app "echo hello"
+terminalcp stdin my-app "npm test" --submit  # Auto-press Enter
 
-# Get raw stream output
-terminalcp stream my-session
-terminalcp stream my-session --since-last  # Only new output
-terminalcp stream my-session --with-ansi   # Keep ANSI codes
+# Monitor logs
+terminalcp stream my-app --since-last
 
-# Get terminal size
-terminalcp term-size my-session
+# Stop sessions
+terminalcp stop my-app
+terminalcp stop  # Stop all
 
-# Resize terminal
-terminalcp resize my-session 120 40
-
-# Stop a session
-terminalcp stop my-session
-terminalcp stop  # Stop all sessions
-
-# Check version
+# Maintenance
 terminalcp version
-
-# Kill the terminal server
 terminalcp kill-server
-```
-
-## Real-world Examples
-
-### Interactive AI Agents (Claude, Gemini)
-```json
-// Start Claude (use absolute path - aliases don't work)
-{"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions"}
-
-// Start in specific directory
-{"action": "start", "command": "gemini", "cwd": "/path/to/project"}
-
-// Send a prompt with automatic Enter key
-{"action": "stdin", "id": "proc-123", "data": "Write a test for main.py", "submit": true}
-
-// Or manually control submission (two separate calls)
-{"action": "stdin", "id": "proc-123", "data": "Write a test for main.py"}
-{"action": "stdin", "id": "proc-123", "data": "\r"}  // Submit with carriage return
-
-// Get the full terminal output from the process
-{"action": "stdout", "id": "proc-123"}
-
-// Clean up when done
-{"action": "stop", "id": "proc-123"}
-
-// Or stop ALL processes at once
-{"action": "stop"}
-```
-
-### Python REPL
-```json
-{"action": "start", "command": "python3 -i"}
-{"action": "stdin", "id": "proc-456", "data": "import numpy as np", "submit": true}
-{"action": "stdout", "id": "proc-456"}
-```
-
-### LLDB Debugger
-```json
-{"action": "start", "command": "lldb ./myapp"}
-{"action": "stdin", "id": "proc-789", "data": "break main", "submit": true}
-{"action": "stdin", "id": "proc-789", "data": "run", "submit": true}
-{"action": "stdout", "id": "proc-789"}  // Get the formatted debugger interface
-```
-
-### Build Process Monitoring
-```json
-{"action": "start", "command": "npm run build"}
-{"action": "stream", "id": "proc-456", "since_last": true}  // Get new output only, ANSI codes stripped by default
-// ... wait a bit ...
-{"action": "stream", "id": "proc-456", "since_last": true}  // Get updates since last check
-```
-
-### Server Log Monitoring
-```json
-{"action": "start", "command": "npm run dev"}
-{"action": "stream", "id": "proc-123", "since_last": true}  // Clean text without color codes by default
-{"action": "stream", "id": "proc-123", "since_last": true, "strip_ansi": false}  // Keep ANSI codes if needed
 ```
 
 ## Important Usage Notes
 
 - **Interactive CLIs**: Use `"submit": true` to automatically append Enter key, or send `\r` separately for manual control
-- **Aliases don't work**: Use absolute paths (e.g., `/Users/username/.claude/local/claude`)
-- **Process cleanup**: Stop individual processes with `{"action": "stop", "id": "proc-id"}` or all at once with `{"action": "stop"}`
-- **Automatic cleanup**: When the MCP server stops, all managed processes are automatically terminated
+- **Aliases don't work**: Commands run via `bash -c`, so use absolute paths or commands in PATH
+- **Process persistence**: Sessions persist across MCP server restarts - manually stop them when done
+- **Named sessions**: Use the `name` parameter when starting to create human-readable session IDs
 
 ## Attaching to AI-Spawned Sessions
 
-terminalcp creates a centralized server that manages all sessions, allowing you to attach from your terminal just like screen or tmux.
-
-### How to Use
+You can attach to any session from your terminal to watch or interact with AI-spawned processes:
 
 1. **AI spawns a process with a name**:
 ```json
 {"action": "start", "command": "python3 -i", "name": "python-debug"}
 ```
 
-2. **List active sessions from your terminal**:
-```bash
-terminalcp ls
-# Output:
-# Active sessions:
-# ================
-#   python-debug
-#     Status: running
-#     CWD: /Users/you/project
-#     Command: python3 -i
-```
-
-3. **Attach to the session**:
+2. **Attach from your terminal**:
 ```bash
 terminalcp attach python-debug
 ```
 
-4. **Interact with the process**:
+3. **Interact directly**:
 - Type commands as normal
 - Terminal resizing is automatically synchronized
 - Press **Ctrl+B** to detach (session continues running)
-- Multiple users can attach to the same session
+- Multiple users can attach to the same session simultaneously
 
-### Use Cases
-
-- **Debugging**: Watch what the AI is doing in real-time
-- **Collaboration**: Jump in when the AI needs help
-- **Monitoring**: Observe long-running processes
-- **Teaching**: See how the AI solves problems step-by-step
-
-### Server Architecture
-
-Sessions are managed by a central server process that:
-- Auto-spawns when needed (first client connection)
-- Persists across MCP server restarts
-- Manages all terminal sessions in memory
-- Uses Unix domain socket at `~/.terminalcp/server.sock`
-- Can be manually killed with `terminalcp kill-server`
+This is perfect for debugging what the AI is doing, jumping in to help, or monitoring long-running processes.
 
 ## How it works
 
@@ -289,10 +301,10 @@ The terminal tool accepts a JSON object with different action types:
   "action": "start",
   "command": "npm run dev",
   "cwd": "/path/to/project",  // optional
-  "name": "dev-server"  // optional: human-readable name for session
+  "name": "dev-server"  // optional: becomes the session ID
 }
 ```
-**Returns**: Process ID (same as name if provided)
+**Returns**: Session ID string (either the provided name or auto-generated like "proc-3465b9b687af")
 
 #### Stop a process
 ```json
@@ -349,12 +361,12 @@ Use `stream` for:
 ```json
 {
   "action": "stdin",
-  "id": "proc-abc123",
+  "id": "dev-server",
   "data": "ls -la",
   "submit": true  // Optional: automatically append Enter key (\r)
 }
 ```
-**Returns**: No content (action completes immediately)
+**Returns**: Empty string
 
 **Options**:
 - `submit`: (optional, boolean) When `true`, automatically appends Enter key (`\r`) to the input. Defaults to `false`.
@@ -374,10 +386,10 @@ Send ANSI sequences like Ctrl+C:
 ```json
 {
   "action": "term-size",
-  "id": "proc-abc123"
+  "id": "dev-server"
 }
 ```
-**Returns**: Terminal dimensions and scrollback info as `{"rows": 24, "cols": 80, "scrollback_lines": 150}`
+**Returns**: String like "24 80 150" (rows, columns, scrollback lines)
 
 #### List all processes
 ```json
@@ -385,7 +397,15 @@ Send ANSI sequences like Ctrl+C:
   "action": "list"
 }
 ```
-**Returns**: List of running processes with their IDs, status, working directory, and commands
+**Returns**: Newline-separated list of sessions with format: "id status cwd command"
+
+#### Check server version
+```json
+{
+  "action": "version"
+}
+```
+**Returns**: Version string (e.g., "1.2.2")
 
 #### Kill the terminal server
 ```json
@@ -393,7 +413,7 @@ Send ANSI sequences like Ctrl+C:
   "action": "kill-server"
 }
 ```
-**Returns**: Confirmation message before shutting down the entire terminal server and all sessions
+**Returns**: "shutting down"
 
 ## Development
 
@@ -401,11 +421,11 @@ Send ANSI sequences like Ctrl+C:
 # Install dependencies
 npm install
 
-# Run in development mode
-npm run dev
-
 # Build for production
 npm run build
+
+# Run tests
+npm run test
 
 # Run checks (linting, formatting, type checking)
 npm run check
@@ -420,32 +440,33 @@ Technically yes, but it's significantly more complex and limited. Here's how Cla
 #### Starting a process
 ```bash
 # terminalcp
-{"action": "start", "command": "lldb myapp"}
-# Returns: {"id": "proc-123", "status": "started"}
+{"action": "start", "command": "lldb myapp", "name": "debug"}
+# Returns: "debug"
 
 # screen equivalent
-screen -dmS session-123 -L lldb myapp
+screen -dmS debug -L lldb myapp
 # No feedback on success/failure
 ```
 
 #### Sending input
 ```bash
 # terminalcp
-{"action": "stdin", "id": "proc-123", "data": "break main", "submit": true}
+{"action": "stdin", "id": "debug", "data": "break main", "submit": true}
+# Returns: ""
 
 # screen equivalent
-screen -S session-123 -X stuff $'break main\n'
+screen -S debug -X stuff $'break main\n'
 # No confirmation the command was received
 ```
 
 #### Getting output
 ```bash
 # terminalcp
-{"action": "stdout", "id": "proc-123"}
-# Returns: Clean, rendered terminal output
+{"action": "stdout", "id": "debug"}
+# Returns: Clean, rendered terminal output as string
 
 # screen equivalent
-screen -S session-123 -X hardcopy /tmp/output.txt
+screen -S debug -X hardcopy /tmp/output.txt
 cat /tmp/output.txt
 # Returns: Raw terminal buffer with ANSI codes, timing issues
 ```
@@ -453,7 +474,7 @@ cat /tmp/output.txt
 #### Monitoring changes
 ```bash
 # terminalcp
-{"action": "stream", "id": "proc-123", "since_last": true}
+{"action": "stream", "id": "debug", "since_last": true}
 # Returns: Only new output since last check
 
 # screen equivalent
