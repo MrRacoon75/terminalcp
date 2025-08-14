@@ -15,7 +15,6 @@ export interface StdinArgs {
 	action: "stdin";
 	id: string;
 	data: string;
-	submit?: boolean;
 }
 
 export interface StdoutArgs {

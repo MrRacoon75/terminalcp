@@ -148,10 +148,47 @@ export class TerminalManager {
 			throw new Error(`Process not found: ${id}`);
 		}
 
-		// Queue pty write to prevent race conditions
-		proc.ptyWriteQueue.enqueue(() => {
-			proc.process.write(data);
-		});
+		// Scan through string and handle \r specially (unless it's part of \r\n)
+		// This helps with some TUI apps that need \r sent separately
+		let buffer = "";
+
+		for (let i = 0; i < data.length; i++) {
+			if (data[i] === "\r") {
+				// Check if next character is \n (Windows line ending)
+				if (i + 1 < data.length && data[i + 1] === "\n") {
+					// It's \r\n, keep them together
+					buffer += "\r\n";
+					i++; // Skip the \n since we already added it
+				} else {
+					// It's a standalone \r, send buffer then \r separately
+					if (buffer) {
+						const bufferCopy = buffer; // Capture buffer value for closure
+						proc.ptyWriteQueue.enqueue(() => {
+							proc.process.write(bufferCopy);
+						});
+						buffer = "";
+					}
+
+					// Send \r separately with a small delay
+					proc.ptyWriteQueue.enqueue(async () => {
+						// Small delay helps some TUIs recognize \r as Enter
+						await new Promise((resolve) => setTimeout(resolve, 10));
+						proc.process.write("\r");
+					});
+				}
+			} else {
+				buffer += data[i];
+			}
+		}
+
+		// Send any remaining buffer
+		if (buffer) {
+			const bufferCopy = buffer; // Capture buffer value for closure
+			proc.ptyWriteQueue.enqueue(() => {
+				proc.process.write(bufferCopy);
+			});
+		}
+		await proc.ptyWriteQueue.drain();
 	}
 
 	/**
@@ -176,6 +213,11 @@ export class TerminalManager {
 			if (line) {
 				lines.push(line.translateToString(true));
 			}
+		}
+
+		// Remove trailing empty lines
+		while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+			lines.pop();
 		}
 
 		return lines.join("\n");

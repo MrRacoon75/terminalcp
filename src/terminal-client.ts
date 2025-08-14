@@ -31,7 +31,7 @@ const packageJsonPath = path.join(__dirname, "..", "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
 const CLIENT_VERSION = packageJson.version;
 
-export class TerminalServerClient {
+export class TerminalClient {
 	private socket?: net.Socket;
 	private serverSocketPath = path.join(os.homedir(), ".terminalcp", "server.sock");
 	// biome-ignore lint/suspicious/noExplicitAny: Hard to type this without a lot of effort
@@ -43,7 +43,7 @@ export class TerminalServerClient {
 	/**
 	 * Connect to the terminal server, starting it if necessary
 	 */
-	async connect(skipVersionCheck = false): Promise<void> {
+	async connect(skipVersionCheck = false, autoStart = true): Promise<void> {
 		// If already connecting, wait for that
 		if (this.connectPromise) {
 			return this.connectPromise;
@@ -54,11 +54,11 @@ export class TerminalServerClient {
 			return;
 		}
 
-		this.connectPromise = this.doConnect(skipVersionCheck);
+		this.connectPromise = this.doConnect(skipVersionCheck, autoStart);
 		return this.connectPromise;
 	}
 
-	private async doConnect(skipVersionCheck = false): Promise<void> {
+	private async doConnect(skipVersionCheck = false, autoStart = true): Promise<void> {
 		// Check if server is already running
 		if (await this.isServerRunning()) {
 			await this.connectToServer();
@@ -67,6 +67,11 @@ export class TerminalServerClient {
 				await this.checkServerVersion();
 			}
 		} else {
+			// Only start the server if autoStart is true
+			if (!autoStart) {
+				throw new Error("No server running");
+			}
+
 			// Start the server (will be same version)
 			await startServer();
 
@@ -255,7 +260,9 @@ export class TerminalServerClient {
 		if (!this.connected) {
 			// Skip version check for kill-server and version commands
 			const skipVersionCheck = args.action === "kill-server" || args.action === "version";
-			await this.connect(skipVersionCheck);
+			// Only auto-start server for "start" action
+			const autoStart = args.action === "start";
+			await this.connect(skipVersionCheck, autoStart);
 		}
 
 		return new Promise((resolve, reject) => {
@@ -287,5 +294,7 @@ export class TerminalServerClient {
 		if (this.socket) {
 			this.socket.end();
 		}
+		this.connected = false;
+		this.connectPromise = undefined;
 	}
 }

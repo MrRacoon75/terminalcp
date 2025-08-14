@@ -168,15 +168,11 @@ export class TerminalServer {
 				}
 
 				case "stdin": {
-					const { id, data, submit } = args || {};
+					const { id, data } = args || {};
 					if (!id || data === undefined) {
 						throw new Error("Missing required fields: id, data");
 					}
 					await this.processManager.sendInput(id, data);
-					if (submit) {
-						await new Promise((resolve) => setTimeout(resolve, 100));
-						await this.processManager.sendInput(id, "\r"); // Append Enter key
-					}
 					result = ""; // Return empty string for stdin
 					break;
 				}

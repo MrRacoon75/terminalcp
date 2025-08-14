@@ -13,7 +13,7 @@
 		"prepublishOnly": "npm run clean && npm run build",
 		"check": "biome check --write . && tsc --project tsconfig.check.json",
 		"prepare": "husky",
-		"test": "tsx test/terminal-manager.test.ts && tsx test/mcp-server.test.ts"
+		"test": "tsx --test --test-concurrency=1 test/**/*.test.ts"
 	},
 	"files": [
 		"dist/**/*",
@@ -44,6 +44,8 @@
 	},
 	"types": "./dist/index.d.ts",
 	"dependencies": {
+		"@anthropic-ai/claude-code": "^1.0.77",
+		"@anthropic-ai/sdk": "^0.60.0",
 		"@modelcontextprotocol/sdk": "^1.17.2",
 		"@xterm/headless": "^5.5.0",
 		"chalk": "^5.5.0",

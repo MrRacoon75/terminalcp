@@ -244,7 +244,7 @@ terminalcp stdout my-app 50  # Last 50 lines
 
 # Send input to a session
 terminalcp stdin my-app "echo hello"
-terminalcp stdin my-app "npm test" --submit  # Auto-press Enter
+terminalcp stdin my-app "npm test\r" # Auto-press Enter
 
 # Monitor logs
 terminalcp stream my-app --since-last

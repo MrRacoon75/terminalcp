@@ -16,7 +16,7 @@ describe("MCP Server", () => {
 		// Create client and connect
 		transport = new StdioClientTransport({
 			command: "npx",
-			args: ["tsx", "src/index.ts"],
+			args: ["tsx", "src/index.ts", "--mcp"],
 			env: process.env as Record<string, string>,
 		});
 
@@ -38,7 +38,7 @@ describe("MCP Server", () => {
 		// Stop all processes first
 		try {
 			await client.callTool({
-				name: "terminal",
+				name: "terminalcp",
 				arguments: {
 					args: { action: "stop" },
 				},
@@ -55,13 +55,13 @@ describe("MCP Server", () => {
 		const tools = await client.listTools();
 		assert.ok(tools.tools.length > 0, "Should have at least one tool");
 
-		const terminalTool = tools.tools.find((t) => t.name === "terminal");
+		const terminalTool = tools.tools.find((t) => t.name === "terminalcp");
 		assert.ok(terminalTool, "Should have terminal tool");
 	});
 
 	it("should start a process", async () => {
 		const result = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "start",
@@ -78,7 +78,7 @@ describe("MCP Server", () => {
 	it("should get process output", async () => {
 		// Start a process first
 		const startResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "start",
@@ -93,7 +93,7 @@ describe("MCP Server", () => {
 
 		// Get output
 		const outputResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stdout",
@@ -108,7 +108,7 @@ describe("MCP Server", () => {
 
 	it("should list processes", async () => {
 		const result = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: { action: "list" },
 			},
@@ -121,7 +121,7 @@ describe("MCP Server", () => {
 	it("should handle interactive process", async () => {
 		// Start interactive process
 		const startResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "start",
@@ -134,7 +134,7 @@ describe("MCP Server", () => {
 
 		// Send input
 		await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stdin",
@@ -150,7 +150,7 @@ describe("MCP Server", () => {
 
 		// Get output
 		const outputResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stdout",
@@ -164,7 +164,7 @@ describe("MCP Server", () => {
 
 		// Stop the process
 		await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stop",
@@ -177,7 +177,7 @@ describe("MCP Server", () => {
 	it("should stop a specific process", async () => {
 		// Start a process
 		const _startResult = await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "start",
@@ -189,7 +189,7 @@ describe("MCP Server", () => {
 
 		// Stop it
 		const stopResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stop",
@@ -205,7 +205,7 @@ describe("MCP Server", () => {
 	it("should get terminal size", async () => {
 		// Start a process
 		const _startResult = await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "start",
@@ -217,7 +217,7 @@ describe("MCP Server", () => {
 
 		// Get terminal size
 		const sizeResult = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "term-size",
@@ -233,7 +233,7 @@ describe("MCP Server", () => {
 
 		// Cleanup
 		await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stop",
@@ -245,7 +245,7 @@ describe("MCP Server", () => {
 
 	it("should check version", async () => {
 		const result = (await client.callTool({
-			name: "terminal",
+			name: "terminalcp",
 			arguments: {
 				args: { action: "version" },
 			},

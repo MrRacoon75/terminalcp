@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AttachClient } from "./attach-client.js";
 import { runMCPServer } from "./mcp-server.js";
-import { TerminalServerClient as TerminalClient } from "./terminal-client.js";
+import { TerminalClient } from "./terminal-client.js";
 import { TerminalServer } from "./terminal-server.js";
 
 // Read version from package.json
@@ -34,7 +34,7 @@ COMMANDS:
   attach <id>                            Attach to a session interactively
   stdout <id> [lines]                    Get terminal output (rendered view)
   stream <id> [opts]                     Get raw output stream
-  stdin <id> <data> [--submit]           Send input to a session
+  stdin <id> <data>                      Send input to a session
   resize <id> <cols> <rows>              Resize terminal dimensions
   term-size <id>                         Get terminal size
   version                                Show client and server versions
@@ -46,22 +46,22 @@ EXAMPLES:
 
   # Start a development server
   terminalcp start dev-server "npm run dev"
-  
+
   # Start an interactive Python session
   terminalcp start python "python3 -i"
-  terminalcp stdin python "print('Hello')" --submit
+  terminalcp stdin python "print('Hello')\r"
   terminalcp stdout python
-  
+
   # Debug with lldb
   terminalcp start debug "lldb ./myapp"
-  terminalcp stdin debug "b main" --submit
-  terminalcp stdin debug "run" --submit
+  terminalcp stdin debug "b main\r"
+  terminalcp stdin debug "run\r"
   terminalcp attach debug  # Interactive debugging
-  
+
   # Monitor build output
   terminalcp start build "npm run build"
   terminalcp stream build --since-last
-  
+
   # Attach to interact with a session
   terminalcp attach python
   # Press Ctrl+B to detach
@@ -71,7 +71,6 @@ OPTIONS:
   --server                               Run as terminal server daemon
   --since-last                           Only show new output (stream)
   --with-ansi                            Keep ANSI codes (stream)
-  --submit                               Add Enter key after input (stdin)
 
 CLAUDE DESKTOP CONFIGURATION:
   Add to claude_desktop_config.json:
@@ -118,6 +117,11 @@ if (args[0] === "--mcp") {
 				process.exit(0);
 			})
 			.catch((err) => {
+				// If no server is running, just show "No active sessions"
+				if (err.message === "No server running") {
+					console.log("No active sessions");
+					process.exit(0);
+				}
 				console.error(err.message);
 				process.exit(1);
 			});
@@ -190,15 +194,23 @@ if (args[0] === "--mcp") {
 			});
 	} else if (args[0] === "stdin") {
 		if (args.length < 3) {
-			console.error("Usage: terminalcp stdin <id> <data> [--submit]");
+			console.error("Usage: terminalcp stdin <id> <data>");
 			process.exit(1);
 		}
 		const client = new TerminalClient();
-		const submit = args.includes("--submit");
-		const dataArgs = args.slice(2).filter((arg) => arg !== "--submit");
-		const data = dataArgs.join(" ");
+		const dataArgs = args.slice(2);
+		let data = dataArgs.join(" ");
+
+		// Interpret common escape sequences (process \\ first to avoid double-processing)
+		data = data
+			.replace(/\\\\/g, "§§BACKSLASH§§") // Temporarily replace \\ with placeholder
+			.replace(/\\r/g, "\r")
+			.replace(/\\n/g, "\n")
+			.replace(/\\t/g, "\t")
+			.replace(/§§BACKSLASH§§/g, "\\"); // Replace placeholder back to single \
+
 		client
-			.request({ action: "stdin", id: args[1], data, submit })
+			.request({ action: "stdin", id: args[1], data })
 			.then(() => {
 				process.exit(0);
 			})

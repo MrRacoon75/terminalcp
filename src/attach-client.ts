@@ -28,8 +28,8 @@ export class AttachClient {
 		// Set up terminal
 		this.setupTerminal();
 
-		// Reset terminal completely before showing session (same as cleanup)
-		this.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?47l\x1b[?1049l\x1bc");
+		// Reset terminal completely before showing session
+		this.resetTerminal();
 
 		// Display initial output
 		if (attachResponse.rawOutput) {
@@ -192,7 +192,6 @@ export class AttachClient {
 					action: "stdin",
 					id: this.attachedSession,
 					data: data.toString(),
-					submit: false,
 				});
 				if (!this.socket.write(`${JSON.stringify(message)}\n`)) {
 					// Handle backpressure - pause stdin until socket drains
@@ -247,6 +246,19 @@ export class AttachClient {
 	}
 
 	/**
+	 * Reset terminal to default state
+	 */
+	private resetTerminal(): void {
+		// Reset terminal to clear any lingering state:
+		// - \x1b[?1000l, \x1b[?1002l, \x1b[?1003l, \x1b[?1006l: Disable mouse tracking modes
+		// - \x1b[?47l, \x1b[?1049l: Exit alternate screen buffer
+		// - \x1b[?25h: Show cursor
+		// - \x1b[0m: Reset all colors and text attributes
+		// - \x1bc: Full terminal reset
+		this.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?47l\x1b[?1049l\x1b[?25h\x1b[0m\x1bc");
+	}
+
+	/**
 	 * Clean up and restore terminal
 	 */
 	private cleanup(): void {
@@ -256,8 +268,7 @@ export class AttachClient {
 		}
 		this.stdin.pause();
 
-		// Reset terminal to clear any lingering state
-		this.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?47l\x1b[?1049l\x1bc");
+		this.resetTerminal();
 
 		process.exit(0);
 	}

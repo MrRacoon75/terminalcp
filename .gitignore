@@ -14,3 +14,6 @@ testprog*
 fizzbus.c
 testproc
 test.c
+screeenlog*
+evaluation/
+.claude-trace
