@@ -14,7 +14,7 @@ const EVAL_DIR = resolve(__dirname, "../evaluation");
 const tools = {
 	terminalcp: `
     You MUST use the terminalcp tool to complete the following task.
-    
+
     IMPORTANT: When sending input with terminalcp:
     - Send input with Enter: terminalcp stdin "input\\r"
     - The CLI interprets \\r as carriage return (Enter key)
@@ -46,7 +46,7 @@ You are free to run \`tmux --help\` if you require more information on the tool.
 - **Stream/monitor**: \`tail -f screenlog.0\`
 - **Kill**: \`screen -S NAME -X quit\`
 
-IMPORTANT: 
+IMPORTANT:
 - Always use $'...' syntax with stuff command to properly handle escape sequences and newlines
 - screenlog.0 contains all output since session start (created by -L flag)
 - Hardcopy captures only what's currently visible on the screen
@@ -58,7 +58,7 @@ You are free to run \`screen --help\` if you require more information on the too
 You must use **terminalcp CLI** to complete the following task.
 
 - **Start**: \`npx tsx src/index.ts start NAME program args\`
-- **Send input**: 
+- **Send input**:
   - With Enter: \`npx tsx src/index.ts stdin NAME "input\\r"\`
   - Without Enter: \`npx tsx src/index.ts stdin NAME "input"\`
   - Just Enter: \`npx tsx src/index.ts stdin NAME "\\r"\`
@@ -291,15 +291,6 @@ Write the complete analysis.md content:`;
 	}
 }
 
-function getTaskTitle(task: string): string {
-	const titles = {
-		task1: "Debug Analysis with LLDB",
-		task2: "OpenCode Interaction",
-		task3: "Python REPL Calculations",
-	};
-	return titles[task as keyof typeof titles] || task;
-}
-
 function checkCompletedEvaluations(): Set<string> {
 	const completed = new Set<string>();
 	if (!existsSync(EVAL_DIR)) {
@@ -353,7 +344,7 @@ async function runEvaluation(completedEvals: Set<string>) {
 
 	// Execute
 	for (const task of taskKeys) {
-		console.log(`\n=== ${task.toUpperCase()} - ${getTaskTitle(task)} ===`);
+		console.log(`\n=== ${task.toUpperCase()} - ${tasks[task as keyof typeof tasks].title} ===`);
 
 		for (const tool of toolKeys) {
 			const evalKey = `${task}-${tool}`;
@@ -463,7 +454,14 @@ async function runEvaluation(completedEvals: Set<string>) {
 				const taskPrompt = execSync(`cat ${promptFile}`, { encoding: "utf8" });
 				const analysisPath = `${EVAL_DIR}/${task}-${tool}-analysis.md`;
 
-				await generateAnalysis(getTaskTitle(task), tool, taskPrompt, finalOutput, taskStatus, analysisPath);
+				await generateAnalysis(
+					tasks[task as keyof typeof tasks].title,
+					tool,
+					taskPrompt,
+					finalOutput,
+					taskStatus,
+					analysisPath,
+				);
 
 				console.log(`✅ Completed ${task}-${tool} (status: ${taskStatus})`);
 			} catch (error) {
