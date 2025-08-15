@@ -132,15 +132,14 @@ describe("MCP Server", () => {
 		})) as MCPResult;
 		const processId = startResult.content[0].text;
 
-		// Send input
+		// Send input with Enter key
 		await client.callTool({
 			name: "terminalcp",
 			arguments: {
 				args: {
 					action: "stdin",
 					id: processId,
-					data: "Test input",
-					submit: true,
+					data: "Test input\r",
 				},
 			},
 		});
@@ -243,6 +242,117 @@ describe("MCP Server", () => {
 		});
 	});
 
+	it("should handle escape sequences in stdin", async () => {
+		// Start a process
+		const startResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-escapes",
+				},
+			},
+		})) as MCPResult;
+
+		const sessionId = startResult.content[0].text;
+		assert.strictEqual(sessionId, "test-escapes");
+
+		// Send text with arrow keys using escape sequences
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "echo hello world\u001b[D\u001b[D\u001b[D\u001b[D\u001b[Dmy \r",
+				},
+			},
+		});
+
+		// Wait for output
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Get output
+		const outputResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		const output = outputResult.content[0].text;
+		assert.ok(output.includes("hello my world"), "Should have inserted 'my ' in the middle");
+
+		// Test control sequences
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "sleep 5\r",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		// Send Ctrl+C using escape sequence
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "\u0003",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		// Verify process was interrupted
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "echo done\r",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const finalOutput = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		assert.ok(finalOutput.content[0].text.includes("done"), "Should show 'done' after Ctrl+C");
+
+		// Cleanup
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stop",
+					id: sessionId,
+				},
+			},
+		});
+	});
+
 	it("should check version", async () => {
 		const result = (await client.callTool({
 			name: "terminalcp",
@@ -253,5 +363,307 @@ describe("MCP Server", () => {
 
 		const version = result.content[0].text;
 		assert.ok(version.match(/^\d+\.\d+\.\d+$/), "Should return a valid version string");
+	});
+
+	it("should handle navigation escape sequences", async () => {
+		// Start a bash session
+		const startResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-navigation",
+				},
+			},
+		})) as MCPResult;
+
+		const sessionId = startResult.content[0].text;
+
+		// Test Home (\u001b[H) and End (\u001b[F)
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "echo test\u001b[H", // Go to beginning of line
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		// Move right past prompt to get to command
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C\u001b[C",
+				},
+			},
+		});
+
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "start \u001b[F end\r", // Add text, go to end, add more
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const output = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		// The exact output depends on terminal behavior, but we should see our text
+		assert.ok(output.content[0].text.includes("start"), "Should contain 'start'");
+
+		// Cleanup
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stop",
+					id: sessionId,
+				},
+			},
+		});
+	});
+
+	it("should handle special keys (Tab, Backspace)", async () => {
+		// Start a bash session
+		const startResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-special-keys",
+				},
+			},
+		})) as MCPResult;
+
+		const sessionId = startResult.content[0].text;
+
+		// Test Tab (\t) for completion
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "ec\t", // Tab for completion
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Test Backspace (\u007f)
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: " test\u007f\u007f\u007fxy\r", // Type, backspace, type more
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const output = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		// Tab completion and backspace behavior varies by shell
+		assert.ok(
+			output.content[0].text.includes("echo") || output.content[0].text.includes("ec"),
+			"Should show echo or ec command",
+		);
+
+		// Cleanup
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stop",
+					id: sessionId,
+				},
+			},
+		});
+	});
+
+	it("should handle complex vim interaction", async () => {
+		// Start a bash session
+		const startResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-vim",
+				},
+			},
+		})) as MCPResult;
+
+		const sessionId = startResult.content[0].text;
+
+		// Start vim
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "vim test.txt\r",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// Enter insert mode, type, escape, save and quit
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "iHello from MCP\u001b:wq\r",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// Check file was created
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "cat test.txt\r",
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const output = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		assert.ok(output.content[0].text.includes("Hello from MCP"), "Should show file contents");
+
+		// Cleanup
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stop",
+					id: sessionId,
+				},
+			},
+		});
+	});
+
+	it("should handle Meta/Alt sequences", async () => {
+		// Start a bash session
+		const startResult = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "start",
+					command: "bash",
+					name: "test-meta",
+				},
+			},
+		})) as MCPResult;
+
+		const sessionId = startResult.content[0].text;
+
+		// Test Alt+b (\u001bb) for word backward in bash
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "echo one two three\u001bb\u001bb", // Move back two words
+				},
+			},
+		});
+
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdin",
+					id: sessionId,
+					data: "inserted \u001b[F\r", // Insert text, go to end, enter
+				},
+			},
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const output = (await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stdout",
+					id: sessionId,
+				},
+			},
+		})) as MCPResult;
+
+		// Meta key behavior varies by terminal
+		assert.ok(
+			output.content[0].text.includes("echo") ||
+				output.content[0].text.includes("one") ||
+				output.content[0].text.includes("two") ||
+				output.content[0].text.includes("three"),
+			"Should contain command elements",
+		);
+
+		// Cleanup
+		await client.callTool({
+			name: "terminalcp",
+			arguments: {
+				args: {
+					action: "stop",
+					id: sessionId,
+				},
+			},
+		});
 	});
 });

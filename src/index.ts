@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AttachClient } from "./attach-client.js";
+import { parseKeyInput } from "./key-parser.js";
 import { runMCPServer } from "./mcp-server.js";
 import { TerminalClient } from "./terminal-client.js";
 import { TerminalServer } from "./terminal-server.js";
@@ -194,20 +195,22 @@ if (args[0] === "--mcp") {
 			});
 	} else if (args[0] === "stdin") {
 		if (args.length < 3) {
-			console.error("Usage: terminalcp stdin <id> <data>");
+			console.error("Usage: terminalcp stdin <id> <text> [text] ...");
+			console.error("\nUse :: prefix for special keys:");
+			console.error('  terminalcp stdin session "hello world" ::Enter');
+			console.error("  terminalcp stdin session hello ::Space world ::Enter");
+			console.error('  terminalcp stdin session "echo test" ::Left ::Left ::Left "hi " ::Enter');
+			console.error('  terminalcp stdin session ::C-c "echo done" ::Enter');
+			console.error("\nSpecial keys: ::Up, ::Down, ::Left, ::Right, ::Enter, ::Tab, ::Space");
+			console.error("              ::Home, ::End, ::PageUp, ::PageDown, ::Insert, ::Delete");
+			console.error("              ::F1-F12, ::BSpace, ::C-<key>, ::M-<key>, ::^<key>");
 			process.exit(1);
 		}
 		const client = new TerminalClient();
 		const dataArgs = args.slice(2);
-		let data = dataArgs.join(" ");
 
-		// Interpret common escape sequences (process \\ first to avoid double-processing)
-		data = data
-			.replace(/\\\\/g, "§§BACKSLASH§§") // Temporarily replace \\ with placeholder
-			.replace(/\\r/g, "\r")
-			.replace(/\\n/g, "\n")
-			.replace(/\\t/g, "\t")
-			.replace(/§§BACKSLASH§§/g, "\\"); // Replace placeholder back to single \
+		// Parse the input using the key parser with :: prefix support
+		const data = parseKeyInput(dataArgs);
 
 		client
 			.request({ action: "stdin", id: args[1], data })

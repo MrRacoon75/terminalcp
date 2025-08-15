@@ -145,7 +145,13 @@ export class TerminalManager {
 	async sendInput(id: string, data: string): Promise<void> {
 		const proc = this.processes.get(id);
 		if (!proc) {
-			throw new Error(`Process not found: ${id}`);
+			throw new Error(`Session not found: ${id}`);
+		}
+
+		if (!proc.running) {
+			throw new Error(
+				`Session ${id} is not running (pid: ${proc.process.pid}, exit code: ${proc.exitCode ?? "unknown"}). Check stdout or stream.`,
+			);
 		}
 
 		// Scan through string and handle \r specially (unless it's part of \r\n)
@@ -206,9 +212,9 @@ export class TerminalManager {
 		const buffer = proc.terminal.buffer.active;
 		const lines = [];
 		const endRow = buffer.length;
-		const startRow = options?.lines ? Math.max(0, endRow - options.lines) : 0;
 
-		for (let i = startRow; i < endRow; i++) {
+		// Get all lines first
+		for (let i = 0; i < endRow; i++) {
 			const line = buffer.getLine(i);
 			if (line) {
 				lines.push(line.translateToString(true));
@@ -218,6 +224,11 @@ export class TerminalManager {
 		// Remove trailing empty lines
 		while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
 			lines.pop();
+		}
+
+		// Apply line limit after removing empty lines
+		if (options?.lines && lines.length > options.lines) {
+			return lines.slice(-options.lines).join("\n");
 		}
 
 		return lines.join("\n");

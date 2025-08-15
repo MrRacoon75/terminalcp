@@ -22,18 +22,11 @@ Two output modes for different use cases:
 
 Each process runs in a proper pseudo-TTY with full terminal emulation, preserving colors, cursor movement, and special key sequences - exactly as if a human were typing at the keyboard. Processes run in the background, so your agent stays responsive while managing long-running tools.
 
-## Architecture
-
-terminalcp uses a centralized server architecture inspired by tmux:
-- **Single server process** manages all terminal sessions (auto-spawns when needed)
-- **Sessions persist** across MCP server restarts and client disconnections
-- **Multiple clients** can connect to the same session simultaneously
-- **Full CLI interface** for direct terminal management outside of MCP
-- **Unix domain sockets** enable direct terminal attachment from any client
+In addition to the MCP server, terminalcp comes with a CLI that can be used like tmux. You can also use the underlying technology in your NodeJS apps to drive CLI tools as part of your apps or tests. See below.
 
 ## Requirements
 - Node.js 20 or newer
-- An MCP client (VS Code, Cursor, Windsurf, Claude Desktop, etc.)
+- An MCP client (VS Code, Cursor, Windsurf, Claude Desktop, Claude Code, etc.)
 
 ## Getting Started
 
@@ -110,7 +103,8 @@ Then use this config:
 {
   "mcpServers": {
     "terminalcp": {
-      "command": "terminalcp"
+      "command": "terminalcp",
+      "args": ["--mcp"]
     }
   }
 }
@@ -118,6 +112,8 @@ Then use this config:
 </details>
 
 ## MCP Usage Examples
+
+The following examples show the JSON arguments to pass to the single `terminalcp` tool exposed by the MCP server. Each example demonstrates different action types and their parameters for managing terminal sessions. The MCP server returns simple plain text responses rather than JSON to minimize token usage.
 
 ### Starting and Managing Processes
 
@@ -138,13 +134,16 @@ Then use this config:
 ### Interacting with Running Sessions
 
 ```json
-// Send input with automatic Enter key
-{"action": "stdin", "id": "dev-server", "data": "npm test", "submit": true}
+// Send text with Enter key (\r)
+{"action": "stdin", "id": "dev-server", "data": "npm test\r"}
 // Returns: ""
 
-// Send input without Enter (for building up commands)
-{"action": "stdin", "id": "analyzer", "data": "import numpy as np"}
-{"action": "stdin", "id": "analyzer", "data": "\r"}  // Manual Enter
+// Send arrow keys to navigate (\u001b[D = Left arrow)
+{"action": "stdin", "id": "editor", "data": "echo hello\u001b[D\u001b[D\u001b[D\u001b[Dhi \r"}
+
+// Send control sequences
+{"action": "stdin", "id": "process", "data": "\u0003"}  // Ctrl+C
+{"action": "stdin", "id": "shell", "data": "\u0004"}     // Ctrl+D (EOF)
 
 // Get terminal output (rendered screen)
 {"action": "stdout", "id": "dev-server"}
@@ -157,7 +156,7 @@ Then use this config:
 ### Monitoring Long-Running Processes
 
 ```json
-// Get all output as raw stream
+// Get all output as raw stream (ansi codes stripped)
 {"action": "stream", "id": "dev-server"}
 
 // Get only new output since last check
@@ -193,8 +192,8 @@ Then use this config:
 // Start Claude with a memorable name
 {"action": "start", "command": "/Users/username/.claude/local/claude --dangerously-skip-permissions", "name": "claude"}
 
-// Send a prompt
-{"action": "stdin", "id": "claude", "data": "Write a test for main.py", "submit": true}
+// Send a prompt with Enter
+{"action": "stdin", "id": "claude", "data": "Write a test for main.py\r"}
 
 // Get the response
 {"action": "stdout", "id": "claude"}
@@ -207,11 +206,14 @@ Then use this config:
 
 ```json
 {"action": "start", "command": "lldb ./myapp", "name": "debugger"}
-{"action": "stdin", "id": "debugger", "data": "break main", "submit": true}
-{"action": "stdin", "id": "debugger", "data": "run", "submit": true}
+{"action": "stdin", "id": "debugger", "data": "break main\r"}
+{"action": "stdin", "id": "debugger", "data": "run\r"}
 {"action": "stdout", "id": "debugger"}  // Get the formatted debugger interface
-{"action": "stdin", "id": "debugger", "data": "bt", "submit": true}  // Backtrace
+{"action": "stdin", "id": "debugger", "data": "bt\r"}  // Backtrace
 {"action": "stdout", "id": "debugger"}
+
+// Navigate with arrow keys (\u001b[A = Up arrow)
+{"action": "stdin", "id": "debugger", "data": "\u001b[A\u001b[A\r"}  // Up, Up, Enter
 ```
 
 ### Build Process Monitoring
@@ -242,9 +244,10 @@ terminalcp attach my-app
 terminalcp stdout my-app
 terminalcp stdout my-app 50  # Last 50 lines
 
-# Send input to a session
-terminalcp stdin my-app "echo hello"
-terminalcp stdin my-app "npm test\r" # Auto-press Enter
+# Send input to a session (use :: prefix for special keys)
+terminalcp stdin my-app "echo hello" ::Enter
+terminalcp stdin my-app "echo test" ::Left ::Left ::Left "hi " ::Enter  # Navigate with arrows
+terminalcp stdin my-app ::C-c  # Send Ctrl+C
 
 # Monitor logs
 terminalcp stream my-app --since-last
@@ -258,16 +261,9 @@ terminalcp version
 terminalcp kill-server
 ```
 
-## Important Usage Notes
+## Attaching to Sessions
 
-- **Interactive CLIs**: Use `"submit": true` to automatically append Enter key, or send `\r` separately for manual control
-- **Aliases don't work**: Commands run via `bash -c`, so use absolute paths or commands in PATH
-- **Process persistence**: Sessions persist across MCP server restarts - manually stop them when done
-- **Named sessions**: Use the `name` parameter when starting to create human-readable session IDs
-
-## Attaching to AI-Spawned Sessions
-
-You can attach to any session from your terminal to watch or interact with AI-spawned processes:
+You can attach to any session from your terminal, e.g. to watch or interact with AI-spawned processes:
 
 1. **AI spawns a process with a name**:
 ```json
@@ -287,13 +283,72 @@ terminalcp attach python-debug
 
 This is perfect for debugging what the AI is doing, jumping in to help, or monitoring long-running processes.
 
+## Important Usage Notes
+
+- **MCP Escape Sequences**: Send special keys using escape sequences: `\r` (Enter), `\u001b[A` (Up), `\u0003` (Ctrl+C)
+- **CLI Special Keys**: Use `::` prefix for special keys: `::Enter`, `::Left`, `::C-c`
+- **Aliases don't work**: Commands run via `bash -c`, so use absolute paths or commands in PATH
+- **Process persistence**: Sessions persist across MCP server restarts - manually stop them when done
+- **Named sessions**: Use the `name` parameter when starting to create human-readable session IDs
+
+### Common Escape Sequences (for MCP)
+```json
+// Basic keys
+Enter: "\r"          Tab: "\t"         Escape: "\u001b"      Backspace: "\u007f"
+
+// Control keys
+Ctrl+C: "\u0003"     Ctrl+D: "\u0004"  Ctrl+Z: "\u001a"      Ctrl+L: "\u000c"
+
+// Arrow keys
+Up: "\u001b[A"       Down: "\u001b[B"   Right: "\u001b[C"     Left: "\u001b[D"
+
+// Navigation
+Home: "\u001b[H"     End: "\u001b[F"    PageUp: "\u001b[5~"   PageDown: "\u001b[6~"
+
+// Function keys
+F1: "\u001bOP"       F2: "\u001bOQ"     F3: "\u001bOR"        F4: "\u001bOS"
+
+// Meta/Alt (ESC + character)
+Alt+x: "\u001bx"     Alt+b: "\u001bb"   Alt+f: "\u001bf"
+```
+
 ## How it works
 
-terminalcp exposes a single MCP tool called `terminal` that accepts JSON commands. The server uses stdio transport and manages multiple background processes through a centralized server architecture. Each process runs in a pseudo-TTY (via node-pty) with its own virtual terminal powered by xterm.js headless. Commands are executed through `bash -c` for proper PTY handling.
+terminalcp uses a layered architecture for flexibility and persistence:
 
-### Tool: `terminal`
+### Architecture Layers
 
-The terminal tool accepts a JSON object with different action types:
+1. **TerminalManager** - Core library that manages PTY sessions
+   - Creates and manages pseudo-TTY processes via node-pty
+   - Maintains virtual terminals using xterm.js headless
+   - Handles input/output, ANSI sequences, and terminal emulation
+   - Provides the programmatic API for all terminal operations
+
+2. **TerminalServer** - Persistent background process
+   - Auto-spawns when needed by CLI or MCP
+   - Listens on Unix domain socket at `~/.terminalcp/server.socket`
+   - Manages all active terminal sessions across clients
+   - Sessions persist even when clients disconnect
+   - Single server instance handles all terminalcp operations
+
+3. **TerminalClient** - Communication layer
+   - Used by both CLI and MCP to talk to TerminalServer
+   - Sends commands over Unix socket
+   - Receives responses and terminal output
+   - Handles connection management and retries
+
+4. **User Interfaces**
+   - **MCP Server**: Exposes `terminalcp` tool, uses TerminalClient to communicate with TerminalServer
+   - **CLI**: Command-line interface, uses TerminalClient to communicate with TerminalServer
+   - Both interfaces provide the same functionality through different entry points
+
+Each process runs in a proper pseudo-TTY with full terminal emulation. Commands are executed through `bash -c` for proper PTY handling, preserving colors, cursor movement, and special key sequences.
+
+### MCP Tool: `terminalcp`
+
+The terminalcp MCP server exposes a single tool called `terminalcp` that accepts JSON commands with different action types. This unified tool design is more efficient than exposing each action as a separate tool, reducing overhead and providing a consistent interface for all terminal operations.
+
+The terminalcp tool accepts a JSON object with different action types:
 
 #### Start a process
 ```json
@@ -337,7 +392,10 @@ Use `stdout` for:
 - REPLs with formatted output
 - Any tool where visual formatting matters
 
-Note: If scrollback exceeds viewport, the TUI may handle scrolling internally - try sending Page Up/Down (`\u001b[5~` / `\u001b[6~`) via stdin to navigate.
+Note: If scrollback exceeds viewport, the TUI may handle scrolling internally. To send Page Up/Down keys:
+- **MCP**: `{"action": "stdin", "id": "session-id", "data": "\u001b[5~"}` (Page Up) or `"\u001b[6~"` (Page Down)
+- **CLI**: `terminalcp stdin session-id ::PageUp` or `::PageDown`
+- **TerminalManager**: `await manager.sendInput(id, '\x1b[5~')` (Page Up) or `buildInput('PageUp')`
 
 #### Get raw stream output
 ```json
@@ -358,29 +416,37 @@ Use `stream` for:
 - Set `strip_ansi: false` only if you need the raw ANSI sequences
 
 #### Send input to a process
+
+Send text and special keys using escape sequences in a string:
+
 ```json
 {
   "action": "stdin",
   "id": "dev-server",
-  "data": "ls -la",
-  "submit": true  // Optional: automatically append Enter key (\r)
+  "data": "ls -la\r"  // Text with Enter key (\r)
 }
 ```
 **Returns**: Empty string
 
-**Options**:
-- `submit`: (optional, boolean) When `true`, automatically appends Enter key (`\r`) to the input. Defaults to `false`.
-
-For interactive CLIs, use `submit: true` for convenience, or send text and Enter separately for manual control.
-
-Send ANSI sequences like Ctrl+C:
+**Examples:**
 ```json
-{
-  "action": "stdin",
-  "id": "proc-abc123",
-  "data": "\x03"
-}
+// Simple text with Enter
+{"action": "stdin", "id": "session", "data": "echo hello\r"}
+
+// Navigate with arrow keys
+{"action": "stdin", "id": "session", "data": "echo test\u001b[D\u001b[D\u001b[D\u001b[Dhi \r"}
+
+// Control sequences
+{"action": "stdin", "id": "session", "data": "\u0003"}  // Ctrl+C
+{"action": "stdin", "id": "session", "data": "sleep 10\r"}  // Start sleep
+{"action": "stdin", "id": "session", "data": "\u001a"}  // Ctrl+Z to suspend
+
+// Complex interaction (vim)
+{"action": "stdin", "id": "session", "data": "vim test.txt\r"}
+{"action": "stdin", "id": "session", "data": "iHello World\u001b:wq\r"}  // Insert, type, ESC, save & quit
 ```
+
+See "Common Escape Sequences" in Important Usage Notes for a complete reference.
 
 #### Get terminal size
 ```json
@@ -415,6 +481,184 @@ Send ANSI sequences like Ctrl+C:
 ```
 **Returns**: "shutting down"
 
+## Programmatic TUI Control with TerminalManager
+
+The `TerminalManager` class provides a programmatic API for driving TUI applications, useful for automation, testing, or building higher-level abstractions. It handles the complexities of terminal emulation, ANSI sequences, and interactive session management.
+
+### Basic Usage
+
+```typescript
+import { TerminalManager } from '@mariozechner/terminalcp';
+
+// Create a manager instance
+const manager = new TerminalManager();
+
+// Start a TUI application
+const sessionId = await manager.start('vim test.txt', {
+  cwd: '/path/to/project',
+  name: 'vim-session'
+});
+
+// Send keystrokes (using raw escape sequences)
+await manager.sendInput(sessionId, 'i');  // Enter insert mode
+await manager.sendInput(sessionId, 'Hello, World!');
+await manager.sendInput(sessionId, '\x1b');  // ESC key
+await manager.sendInput(sessionId, ':wq\r');  // Save and quit
+
+// Or use the buildInput helper for symbolic key names
+import { buildInput } from '@mariozechner/terminalcp';
+await manager.sendInput(sessionId, buildInput('i', 'Hello, World!', 'Escape', ':wq', 'Enter'));
+
+// Get the rendered terminal screen
+const screen = await manager.stdout(sessionId);
+console.log(screen);
+
+// Clean up
+await manager.stop(sessionId);
+```
+
+### Advanced TUI Interaction
+
+```typescript
+// Drive interactive debuggers
+const debugId = await manager.start('lldb ./myapp');
+await manager.sendInput(debugId, 'break main\r');
+await manager.sendInput(debugId, 'run\r');
+
+// Wait for output to settle
+await new Promise(resolve => setTimeout(resolve, 100));
+
+// Get terminal output
+const output = await manager.stdout(debugId);
+
+// Send special keys using escape sequences
+await manager.sendInput(debugId, '\x1b[A');  // Up arrow
+await manager.sendInput(debugId, '\x1b[B');  // Down arrow
+
+// Or use buildInput helper for readability
+import { buildInput } from '@mariozechner/terminalcp';
+await manager.sendInput(debugId, buildInput('Up', 'Up', 'Enter'));  // Navigate command history
+
+// Monitor streaming output
+const logs = await manager.stream(debugId, { sinceLast: true });
+```
+
+### Testing TUI Applications
+
+```typescript
+describe('TUI Application Tests', () => {
+  let manager: TerminalManager;
+
+  beforeEach(() => {
+    manager = new TerminalManager();
+  });
+
+  afterEach(async () => {
+    await manager.stopAll();
+  });
+
+  test('vim navigation', async () => {
+    const id = await manager.start('vim');
+
+    // Enter text
+    await manager.sendInput(id, 'iHello\x1b');
+
+    // Navigate
+    await manager.sendInput(id, 'gg');  // Go to top
+    await manager.sendInput(id, 'G');   // Go to bottom
+
+    // Verify screen content
+    const screen = await manager.stdout(id);
+    expect(screen).toContain('Hello');
+  });
+
+  test('interactive REPL', async () => {
+    const id = await manager.start('python3 -i');
+
+    // Wait for prompt
+    await waitForOutput(manager, id, '>>>');
+
+    // Send command
+    await manager.sendInput(id, '2 + 2\r');
+
+    // Check result
+    const output = await manager.stdout(id);
+    expect(output).toContain('4');
+  });
+});
+
+async function waitForOutput(
+  manager: TerminalManager,
+  id: string,
+  pattern: string,
+  timeout = 5000
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const output = await manager.stdout(id);
+    if (output.includes(pattern)) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timeout waiting for: ${pattern}`);
+}
+```
+
+### Common ANSI Sequences for TUI Control
+
+```typescript
+// Special keys
+const KEYS = {
+  ESCAPE: '\x1b',
+  ENTER: '\r',
+  TAB: '\t',
+  BACKSPACE: '\x7f',
+  DELETE: '\x1b[3~',
+
+  // Control keys
+  CTRL_C: '\x03',
+  CTRL_D: '\x04',
+  CTRL_Z: '\x1a',
+  CTRL_L: '\x0c',  // Clear screen
+
+  // Navigation
+  UP: '\x1b[A',
+  DOWN: '\x1b[B',
+  RIGHT: '\x1b[C',
+  LEFT: '\x1b[D',
+  HOME: '\x1b[H',
+  END: '\x1b[F',
+  PAGE_UP: '\x1b[5~',
+  PAGE_DOWN: '\x1b[6~',
+
+  // Function keys
+  F1: '\x1bOP',
+  F2: '\x1bOQ',
+  F3: '\x1bOR',
+  F4: '\x1bOS',
+};
+
+// Example: Navigate a menu-based TUI
+await manager.sendInput(id, KEYS.DOWN);
+await manager.sendInput(id, KEYS.DOWN);
+await manager.sendInput(id, KEYS.ENTER);
+
+// Or use the buildInput helper
+import { buildInput } from '@mariozechner/terminalcp';
+await manager.sendInput(id, buildInput('Down', 'Down', 'Enter'));
+```
+
+### Tips for Driving TUIs
+
+1. **Timing**: TUIs often need time to process input and render. Add small delays between commands when necessary.
+
+2. **Screen vs Stream**: Use `stdout()` for TUIs that maintain a visual layout, `stream()` for scrolling output.
+
+3. **Terminal Size**: Default is 80x24. Some TUIs may behave differently at different sizes.
+
+4. **Input Modes**: Some TUIs distinguish between line mode and character mode. Append `\r` to send Enter when needed.
+
+5. **Scrollback**: The terminal maintains up to 10,000 lines of scrollback. For TUIs with internal scrolling, send Page Up/Down keys (`\x1b[5~` / `\x1b[6~`) instead of relying on scrollback.
+
 ## Development
 
 ```bash
@@ -424,8 +668,18 @@ npm install
 # Build for production
 npm run build
 
-# Run tests
+# Run ad-hoc for debugging in VS Code JavaScript Terminal
+npx tsx src/index.ts start python python3 -i
+
+# Run tests (uses Node.js built-in test framework)
 npm test
+
+# Run specific test file(s)
+npx tsx --test test/key-parser.test.ts
+npx tsx --test test/key-parser.test.ts test/mcp-server.test.ts
+
+# Run tests matching a pattern
+npx tsx --test --test-name-pattern="should handle symbolic keys" test/mcp-server.test.ts
 
 # Run checks (linting, formatting, type checking)
 npm run check
@@ -440,41 +694,43 @@ Technically yes, but it's significantly more complex and limited. Here's how Cla
 #### Starting a process
 ```bash
 # terminalcp
-{"action": "start", "command": "lldb myapp", "name": "debug"}
-# Returns: "debug"
+{"action": "start", "command": "python3 -i", "name": "repl"}
+# Returns: "repl"
 
 # screen equivalent
-screen -dmS debug -L lldb myapp
+screen -dmS repl -L python3 -i
 # No feedback on success/failure
 ```
 
 #### Sending input
 ```bash
 # terminalcp
-{"action": "stdin", "id": "debug", "data": "b main", "submit": true}
+{"action": "stdin", "id": "repl", "data": "2+2\r"}
 # Returns: ""
 
 # screen equivalent
-screen -S debug -X stuff $'b main\n'
+screen -S repl -X stuff $'2+2\n'
 # No confirmation the command was received
 ```
 
 #### Getting output
 ```bash
 # terminalcp
-{"action": "stdout", "id": "debug"}
+{"action": "stdout", "id": "repl"}
 # Returns: Clean, rendered terminal output as string
 
-# screen equivalent
-screen -S debug -X hardcopy /tmp/output.txt
-cat /tmp/output.txt
-# Returns: Raw terminal buffer with ANSI codes, timing issues
+# screen equivalent  
+# Workaround for v4.0.3 bug: attach/detach once per session with expect
+expect -c 'spawn screen -r repl; send "\001d"; expect eof' >/dev/null 2>&1
+screen -S repl -p 0 -X hardcopy output.txt
+cat output.txt
+# Note: v4.0.3 has hardcopy bug, needs one-time attach: https://stackoverflow.com/questions/36145175/
 ```
 
 #### Monitoring changes
 ```bash
 # terminalcp
-{"action": "stream", "id": "debug", "since_last": true}
+{"action": "stream", "id": "repl", "since_last": true}
 # Returns: Only new output since last check
 
 # screen equivalent
@@ -482,15 +738,68 @@ cat /tmp/output.txt
 tail -f screenlog.0 | grep "pattern"  # Crude approximation
 ```
 
-### Key limitations of screen/tmux
+### Can you use tmux?
 
-1. **No structured responses** - Everything is text in files or stdout
-2. **No reliable output retrieval** - Must use hardcopy or logging with timing guesswork
-3. **ANSI escape sequence pollution** - Output full of terminal control codes clogging up the agent's context
-4. **No incremental reading** - Can't easily get "what's new since last check"
-6. **No process lifecycle info** - Don't know when processes exit or their exit codes
-7. **Timing issues** - Must guess when commands complete with sleep
-8. **Not great for modern TUIs** - Tools like Claude CLI that constantly redraw their interface produce massive amounts of escape sequences in screen logs, making output practically unusable
+Similar to screen, tmux can also be used as a replacement for terminalcp. Compared to screen, it is a much better choice.
+
+#### Starting a process
+```bash
+# terminalcp
+{"action": "start", "command": "python3 -i", "name": "repl"}
+# Returns: "repl"
+
+# tmux equivalent
+tmux new-session -d -s repl python3 -i
+# No feedback on success/failure
+# If you want to capture output, must set up pipe-pane immediately:
+tmux pipe-pane -t repl -o "cat >> /tmp/repl.log"
+# WARNING: Any output between session start and pipe-pane activation is lost!
+```
+
+#### Sending input
+```bash
+# terminalcp
+{"action": "stdin", "id": "repl", "data": "import os\r"}
+# Returns: ""
+
+# tmux equivalent
+tmux send-keys -t repl "import os" Enter
+# No confirmation the command was received
+```
+
+#### Getting output
+```bash
+# terminalcp
+{"action": "stdout", "id": "repl"}
+# Returns: Clean, rendered terminal output as string
+
+# tmux equivalent
+tmux capture-pane -t repl -p
+# Returns: Current visible pane only
+# OR with full scrollback:
+tmux capture-pane -t repl -p -S -
+# Returns: Clean rendered output with scrollback
+```
+
+#### Monitoring changes
+```bash
+# terminalcp
+{"action": "stream", "id": "repl", "since_last": true}
+# Returns: Only new output since last check
+
+# tmux equivalent
+# No built-in incremental reading
+# Must be set up when session starts to capture all output
+tmux pipe-pane -t repl -o "cat >> /tmp/tmux.log"  # -o flag required to activate
+tail -f /tmp/tmux.log  # Still shows everything, not just new
+```
+
+### Key differences of screen/tmux
+
+1. **No incremental reading** - Can't easily get "what's new since last check" 
+2. **Process lifecycle complexity** - Requires `remain-on-exit` (tmux) to track exit codes, sessions auto-close by default
+3. **Initial output loss** - With tmux pipe-pane, any output between session creation and pipe activation is lost (e.g., Python's startup banner)
+4. **Version-specific bugs** - screen v4.0.3 (common on macOS) has [broken hardcopy command](https://stackoverflow.com/questions/36145175/)
 
 ## License
 
