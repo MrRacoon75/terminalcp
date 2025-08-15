@@ -11,10 +11,31 @@ import { EvalRunner } from "./runner.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Helper to resolve task/tool paths
+function resolveFilePath(item: string, type: "tasks" | "tools"): string | null {
+	// First check if it's a valid file path as-is
+	if (existsSync(item)) {
+		return resolve(item);
+	}
+
+	// Check with .md extension if not already present
+	if (!item.endsWith(".md") && existsSync(item + ".md")) {
+		return resolve(item + ".md");
+	}
+
+	// Check in the default directory
+	const defaultPath = resolve(__dirname, type, item.endsWith(".md") ? item : `${item}.md`);
+	if (existsSync(defaultPath)) {
+		return defaultPath;
+	}
+
+	return null;
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 
-// Parse CLI flags
+// Parse CLI flags with support for multiple values and file paths
 function parseArgs(args: string[]): {
 	agents: string[];
 	tasks: string[];
@@ -28,17 +49,31 @@ function parseArgs(args: string[]): {
 		help: false,
 	};
 
+	let currentList: "agents" | "tasks" | "tools" | null = null;
+
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 
 		if (arg === "--help" || arg === "-h") {
 			result.help = true;
-		} else if (arg === "--agents" && i + 1 < args.length) {
-			result.agents = args[++i].split(",").map((s) => s.trim());
-		} else if (arg === "--tasks" && i + 1 < args.length) {
-			result.tasks = args[++i].split(",").map((s) => s.trim());
-		} else if (arg === "--tools" && i + 1 < args.length) {
-			result.tools = args[++i].split(",").map((s) => s.trim());
+			currentList = null;
+		} else if (arg === "--agents") {
+			currentList = "agents";
+		} else if (arg === "--tasks") {
+			currentList = "tasks";
+		} else if (arg === "--tools") {
+			currentList = "tools";
+		} else if (arg.startsWith("--")) {
+			// Unknown flag, stop collecting for current list
+			currentList = null;
+			console.warn(`Unknown flag: ${arg}`);
+		} else if (currentList) {
+			// Add to current list - support comma-separated values for backwards compatibility
+			const items = arg
+				.split(",")
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
+			result[currentList].push(...items);
 		}
 	}
 
@@ -58,19 +93,26 @@ if (parsed.help) {
 Usage: npx tsx test/eval/run.ts [options]
 
 Options:
-  --agents <list>  Comma-separated list of agents (default: claude)
-  --tasks <list>   Comma-separated list of tasks (default: all)
-  --tools <list>   Comma-separated list of tools (default: all)
-  --help, -h       Show this help
+  --agents <items...>  Agent names (default: claude)
+  --tasks <items...>   Task names or file paths (default: all tasks in test/eval/tasks/)
+  --tools <items...>   Tool names or file paths (default: all tools in test/eval/tools/)
+  --help, -h           Show this help
+
+Arguments can be:
+  - Multiple items after each flag: --agents claude gemini
+  - Comma-separated (backwards compatible): --agents claude,gemini
+  - Mixed flags: --agents claude --tasks python-repl --agents gemini
+  - File paths for tasks/tools: --tasks ./my-task.md --tools ~/my-tool.md
+  - Short names (looked up in test/eval/): --tasks python-repl --tools screen
 
 Examples:
   npx tsx test/eval/run.ts
     Run all tasks and tools with claude
 
-  npx tsx test/eval/run.ts --agents claude,opencode
-    Run all tasks and tools with claude and opencode
+  npx tsx test/eval/run.ts --agents claude gemini --tasks python-repl debug-lldb
+    Run two agents with two tasks on all tools
 
-  npx tsx test/eval/run.ts --agents claude,opencode --tasks python-repl,debug --tools tmux,screen
+  npx tsx test/eval/run.ts --agents claude --tasks python-repl ./custom-task.md --tools terminalcp
     Run specific tasks and tools with specific agents
 
   npx tsx test/eval/run.ts --tasks debug --tools tmux
@@ -84,14 +126,50 @@ Results saved to: evaluation-results/
 	process.exit(0);
 }
 
+// Process and validate task/tool paths
+const resolvedTasks: string[] = [];
+const resolvedTools: string[] = [];
+
+// Resolve task paths
+if (parsed.tasks.length > 0) {
+	for (const task of parsed.tasks) {
+		const resolved = resolveFilePath(task, "tasks");
+		if (resolved) {
+			resolvedTasks.push(resolved);
+		} else {
+			console.error(chalk.red(`Task not found: ${task}`));
+			console.error(chalk.gray(`  Looked for:`));
+			console.error(chalk.gray(`    - ${resolve(task)}`));
+			console.error(chalk.gray(`    - ${resolve(task + ".md")}`));
+			console.error(chalk.gray(`    - ${resolve(__dirname, "tasks", task + ".md")}`));
+			process.exit(1);
+		}
+	}
+}
+
+// Resolve tool paths
+if (parsed.tools.length > 0) {
+	for (const tool of parsed.tools) {
+		const resolved = resolveFilePath(tool, "tools");
+		if (resolved) {
+			resolvedTools.push(resolved);
+		} else {
+			console.error(chalk.red(`Tool not found: ${tool}`));
+			console.error(chalk.gray(`  Looked for:`));
+			console.error(chalk.gray(`    - ${resolve(tool)}`));
+			console.error(chalk.gray(`    - ${resolve(tool + ".md")}`));
+			console.error(chalk.gray(`    - ${resolve(__dirname, "tools", tool + ".md")}`));
+			process.exit(1);
+		}
+	}
+}
+
 // Configure evaluation
 const config = {
 	outputDir: resolve(__dirname, "../../evaluation-results"),
-	tasksDir: resolve(__dirname, "tasks"),
-	toolsDir: resolve(__dirname, "tools"),
 	agents: parsed.agents,
-	taskFilter: parsed.tasks,
-	toolFilter: parsed.tools,
+	taskPaths: resolvedTasks,
+	toolPaths: resolvedTools,
 };
 
 // Ensure output directory exists before compiling

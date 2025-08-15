@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { TerminalManager } from "../../src/terminal-manager.js";
 import type { Agent } from "./agents.js";
@@ -8,11 +9,9 @@ import { AGENTS, isAgentWorking } from "./agents.js";
 
 export interface EvalConfig {
 	outputDir: string;
-	tasksDir: string; // Directory containing task markdown files
-	toolsDir: string; // Directory containing tool instruction files
 	agents: string[]; // Agent IDs from AGENTS
-	taskFilter?: string[]; // Optional filter for specific tasks
-	toolFilter?: string[]; // Optional filter for specific tools
+	taskPaths: string[]; // Paths to task files (resolved from names or direct paths)
+	toolPaths: string[]; // Paths to tool files (resolved from names or direct paths)
 }
 
 interface ToolConfig {
@@ -88,23 +87,25 @@ export class EvalRunner {
 	}
 
 	/**
-	 * Load task descriptions from markdown files
+	 * Load task descriptions from resolved file paths
 	 */
 	private loadTasks(): Map<string, string> {
 		const tasks = new Map<string, string>();
-		const taskFiles = readdirSync(this.config.tasksDir).filter((f) => f.endsWith(".md"));
 
-		for (const file of taskFiles) {
-			const taskId = file.replace(".md", "");
+		// If no paths specified, load all from default directory
+		const paths =
+			this.config.taskPaths.length > 0
+				? this.config.taskPaths
+				: readdirSync(resolve(dirname(fileURLToPath(import.meta.url)), "tasks"))
+						.filter((f) => f.endsWith(".md"))
+						.map((f) => resolve(dirname(fileURLToPath(import.meta.url)), "tasks", f));
 
-			// Apply filter if specified
-			if (this.config.taskFilter && this.config.taskFilter.length > 0) {
-				if (!this.config.taskFilter.includes(taskId)) {
-					continue;
-				}
-			}
+		for (const path of paths) {
+			// Extract task ID from filename (without extension and path)
+			const filename = path.split("/").pop() || path;
+			const taskId = filename.replace(".md", "");
 
-			const content = readFileSync(resolve(this.config.tasksDir, file), "utf8");
+			const content = readFileSync(path, "utf8");
 			tasks.set(taskId, content);
 		}
 
@@ -149,23 +150,25 @@ export class EvalRunner {
 	}
 
 	/**
-	 * Load tool instructions from files
+	 * Load tool instructions from resolved file paths
 	 */
 	private loadTools(): Map<string, { config: ToolConfig; instructions: string }> {
 		const tools = new Map<string, { config: ToolConfig; instructions: string }>();
-		const toolFiles = readdirSync(this.config.toolsDir).filter((f) => f.endsWith(".md"));
 
-		for (const file of toolFiles) {
-			const toolId = file.replace(".md", "");
+		// If no paths specified, load all from default directory
+		const paths =
+			this.config.toolPaths.length > 0
+				? this.config.toolPaths
+				: readdirSync(resolve(dirname(fileURLToPath(import.meta.url)), "tools"))
+						.filter((f) => f.endsWith(".md"))
+						.map((f) => resolve(dirname(fileURLToPath(import.meta.url)), "tools", f));
 
-			// Apply filter if specified
-			if (this.config.toolFilter && this.config.toolFilter.length > 0) {
-				if (!this.config.toolFilter.includes(toolId)) {
-					continue;
-				}
-			}
+		for (const path of paths) {
+			// Extract tool ID from filename (without extension and path)
+			const filename = path.split("/").pop() || path;
+			const toolId = filename.replace(".md", "");
 
-			const content = readFileSync(resolve(this.config.toolsDir, file), "utf8");
+			const content = readFileSync(path, "utf8");
 			const parsed = this.parseToolConfig(content);
 			tools.set(toolId, parsed);
 		}
@@ -333,15 +336,19 @@ export class EvalRunner {
 	 * Run all evaluations
 	 */
 	async runAll(): Promise<void> {
-		console.log(chalk.bold.white("Starting Evaluation Suite"));
-		console.log(chalk.gray(`Output directory: ${this.config.outputDir}`));
-		console.log(chalk.gray(`Tasks directory: ${this.config.tasksDir}`));
-		console.log(chalk.gray(`Tools directory: ${this.config.toolsDir}`));
-		console.log(chalk.gray(`Agents: ${this.config.agents.join(", ")}`));
-
 		// Load tasks and tools
 		const tasks = this.loadTasks();
 		const tools = this.loadTools();
+
+		console.log(chalk.bold.white("Starting Evaluation Suite"));
+		console.log(chalk.gray(`Output directory: ${this.config.outputDir}`));
+		console.log(
+			chalk.gray(`Tasks: ${tasks.size} task${tasks.size !== 1 ? "s" : ""} (${Array.from(tasks.keys()).join(", ")})`),
+		);
+		console.log(
+			chalk.gray(`Tools: ${tools.size} tool${tools.size !== 1 ? "s" : ""} (${Array.from(tools.keys()).join(", ")})`),
+		);
+		console.log(chalk.gray(`Agents: ${this.config.agents.join(", ")}`));
 
 		const totalEvals = this.config.agents.length * tasks.size * tools.size;
 		console.log(chalk.gray(`Total evaluations: ${totalEvals}\n`));
