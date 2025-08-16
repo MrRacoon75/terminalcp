@@ -16,6 +16,7 @@ testproc
 test.c
 screeenlog*
 evaluation/
+evaluation-results/
 .claude-trace
 mcp.json
 mcpservers.json
