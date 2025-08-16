@@ -178,7 +178,7 @@ export class TerminalManager {
 					// Send \r separately with a small delay
 					proc.ptyWriteQueue.enqueue(async () => {
 						// Small delay helps some TUIs recognize \r as Enter
-						await new Promise((resolve) => setTimeout(resolve, 100));
+						await new Promise((resolve) => setTimeout(resolve, 200));
 						proc.process.write("\r");
 					});
 				}

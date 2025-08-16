@@ -18,7 +18,7 @@ export interface Agent {
 export const AGENTS: Record<string, Agent> = {
 	claude: {
 		name: "Claude Code",
-		command: "claude --dangerously-skip-permissions --strict-mcp-config --mcp-config mcp.json",
+		command: "claude --dangerously-skip-permissions --model sonnet --strict-mcp-config --mcp-config mcp.json",
 		workingMarker: "esc to interrupt",
 		costCommand: "/cost",
 		initDelay: 3000,

@@ -40,12 +40,16 @@ function parseArgs(args: string[]): {
 	agents: string[];
 	tasks: string[];
 	tools: string[];
+	repeat: number;
+	parallel: number;
 	help: boolean;
 } {
 	const result = {
 		agents: [] as string[],
 		tasks: [] as string[],
 		tools: [] as string[],
+		repeat: 1,
+		parallel: 1,
 		help: false,
 	};
 
@@ -63,6 +67,26 @@ function parseArgs(args: string[]): {
 			currentList = "tasks";
 		} else if (arg === "--tools") {
 			currentList = "tools";
+		} else if (arg === "--repeat") {
+			currentList = null;
+			if (i + 1 < args.length) {
+				const value = parseInt(args[++i], 10);
+				if (!isNaN(value) && value > 0) {
+					result.repeat = value;
+				} else {
+					console.warn(`Invalid repeat value: ${args[i]}, using default (1)`);
+				}
+			}
+		} else if (arg === "--parallel") {
+			currentList = null;
+			if (i + 1 < args.length) {
+				const value = parseInt(args[++i], 10);
+				if (!isNaN(value) && value > 0) {
+					result.parallel = value;
+				} else {
+					console.warn(`Invalid parallel value: ${args[i]}, using default (1)`);
+				}
+			}
 		} else if (arg.startsWith("--")) {
 			// Unknown flag, stop collecting for current list
 			currentList = null;
@@ -96,6 +120,8 @@ Options:
   --agents <items...>  Agent names (default: claude)
   --tasks <items...>   Task names or file paths (default: all tasks in test/eval/tasks/)
   --tools <items...>   Tool names or file paths (default: all tools in test/eval/tools/)
+  --repeat <n>         Number of times to repeat each evaluation (default: 1)
+  --parallel <n>       Number of evaluations to run in parallel (default: 1)
   --help, -h           Show this help
 
 Arguments can be:
@@ -170,6 +196,8 @@ const config = {
 	agents: parsed.agents,
 	taskPaths: resolvedTasks,
 	toolPaths: resolvedTools,
+	repeat: parsed.repeat,
+	parallel: parsed.parallel,
 };
 
 // Ensure output directory exists before compiling

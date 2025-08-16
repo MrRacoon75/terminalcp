@@ -5,54 +5,41 @@
 }
 ---
 
-You must use **tmux** to complete the following task.
+### Quick Start (Typical Workflow)
+1. `tmux new-session -d -s NAME "command" \; set remain-on-exit on` - Start session
+2. `tmux send-keys -t NAME "input" Enter` - Send input
+3. `tmux capture-pane -t NAME -p` - Get current viewport (clean, rendered)
+4. `tmux kill-session -t NAME` - Clean up when done
 
-## Core Commands
+### Core Commands
 
-- **Start session**: `tmux new-session -d -s NAME command args`
+- **Start session**: `tmux new-session -d -s NAME "command args" \; set remain-on-exit on`
   - `-d` detached mode, `-s` session name
-  - Example: `tmux new-session -d -s repl python3 -i`
-  
+  - **IMPORTANT**: Use `remain-on-exit on` to capture output after process ends
+  - Example: `tmux new-session -d -s repl "python3 -i" \; set remain-on-exit on`
+
 - **List sessions**: `tmux list-sessions` or `tmux ls`
-  
+
 - **Send input**: `tmux send-keys -t NAME "input" Enter`
-  - Enter key: `Enter` or `C-m`
-  - Ctrl+C: `C-c`
-  - Arrow keys: `Up` `Down` `Right` `Left`
-  - Page Up/Down: `PageUp` `PageDown`
+  - Batch multiple: `tmux send-keys -t NAME "cmd1" Enter "cmd2" Enter "cmd3" Enter`
+  - Special keys: `C-c` (Ctrl+C), `Up`/`Down`/`Right`/`Left` (arrows), `PageUp`/`PageDown`
   - Example: `tmux send-keys -t repl "2+2" Enter`
-  
+  - **Multiline (Python auto-indents)**: `tmux send-keys -t repl "def greet(name):" Enter "return f'Hello {name}'" Enter Enter`
+
 - **Get output**:
-  - **Current pane**: `tmux capture-pane -t NAME -p`
-  - **With scrollback**: `tmux capture-pane -t NAME -p -S -` (full history)
+  - **Current viewport** (RECOMMENDED - clean, rendered view): `tmux capture-pane -t NAME -p`
   - **Last N lines**: `tmux capture-pane -t NAME -p -S -N`
-  - **Specific range**: `tmux capture-pane -t NAME -p -S -100 -E -50` (lines -100 to -50)
-  
-- **Stream output** (must be set up at session start):
-  ```bash
-  tmux pipe-pane -t NAME -o "cat >> output.log"
-  tail -f output.log
-  ```
-  - **Warning**: Output between session creation and pipe-pane activation is lost
-  - Contains raw character-by-character redraws with ANSI codes
-  
-- **Process lifecycle**:
-  - **Check if alive**: `tmux list-panes -t NAME -F "#{pane_dead}"`
-  - **Get exit code** (requires `set remain-on-exit on`):
-    ```bash
-    tmux new-session -d -s NAME "command" \; set remain-on-exit on
-    tmux list-panes -t NAME -F "#{pane_dead} #{pane_dead_status}"
-    ```
-  
+  - **Full scrollback**: `tmux capture-pane -t NAME -p -S -`
+
+- **Check if alive**: `tmux list-panes -t NAME -F "#{pane_dead}"` (0=alive, 1=dead)
+
 - **Kill session**: `tmux kill-session -t NAME`
-  
-- **Kill all sessions**: `tmux kill-server`
 
-## Important Notes
-
-- **Clean rendered output**: Use `capture-pane` for clean terminal view without ANSI pollution
-- **No incremental reading**: Cannot easily get "only new output since last check"
-- **Sessions auto-close**: When the command exits, session closes unless `remain-on-exit` is set
-- **Initial output loss**: With pipe-pane, any output before activation is lost
+### Important Notes
+- **Only kill sessions you started by name**
+- **capture-pane = viewport only**: Shows current screen (clean, rendered), perfect for TUIs/REPLs
+- **capture-pane -S - = full scrollback**: Clean rendered history
+- **remain-on-exit on**: Essential for capturing output after process ends
+- **TIP**: For interactive programs, use capture-pane after operations complete for clean view
 
 You are free to run `tmux --help` if you require more information on the tool.

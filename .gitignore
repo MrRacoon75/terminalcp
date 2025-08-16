@@ -17,3 +17,7 @@ test.c
 screeenlog*
 evaluation/
 .claude-trace
+mcp.json
+mcpservers.json
+output.txt
+screenlog.0

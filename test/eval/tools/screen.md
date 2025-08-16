@@ -5,52 +5,47 @@
 }
 ---
 
-You must use **screen** to complete the following task.
+### Quick Start (Typical Workflow)
+1. `rm -f screenlog.0 && screen -dmS NAME -L command args` - Start session
+2. `expect -c 'spawn screen -r NAME; send "\001d"; expect eof' >/dev/null 2>&1` - Enable hardcopy (once per session)
+3. `screen -S NAME -X stuff $'input\n'` - Send input
+4. `screen -S NAME -p 0 -X hardcopy output.txt && cat output.txt` - Get current viewport (clean, rendered)
+5. `screen -S NAME -X quit` - Clean up when done
 
-## Core Commands
+### Core Commands
 
 - **Start session**: `screen -dmS NAME -L program args`
   - `-d` detached mode, `-m` force new session, `-S` session name, `-L` enable logging
   - **IMPORTANT**: Remove old `screenlog.0` first: `rm -f screenlog.0`
   - Example: `rm -f screenlog.0 && screen -dmS repl -L python3 -i`
-  
+
 - **List sessions**: `screen -ls`
-  
+
 - **Send input**: `screen -S NAME -X stuff $'input\n'`
   - REQUIRED: Use $'...' syntax for proper escape sequences
-  - Enter key: `screen -S NAME -X stuff $'\n'`
-  - Ctrl+C: `screen -S NAME -X stuff $'\003'`
-  - Arrow keys: Up=$'\e[A' Down=$'\e[B' Right=$'\e[C' Left=$'\e[D'
+  - Batch multiple: `screen -S NAME -X stuff $'cmd1\ncmd2\ncmd3\n'`
+  - Special keys: `$'\003'` (Ctrl+C), `$'\e[A]'/`$'\e[B]'/`$'\e[C]'/`$'\e[D]'` (Up/Down/Right/Left arrows)
   - Example: `screen -S repl -X stuff $'2+2\n'`
-  
+  - **Multiline (Python auto-indents)**: `screen -S repl -X stuff $'def greet(name):\nreturn f\'Hello {name}\'\n\n'`
+
 - **Get output**:
-  - **Hardcopy workaround for v4.0.3 bug** (do once per session):
+  - **Current viewport** (RECOMMENDED - clean, rendered view):
     ```bash
-    # Run this once after starting the session
+    # First time per session (v4.0.3 bug workaround):
     expect -c 'spawn screen -r NAME; send "\001d"; expect eof' >/dev/null 2>&1
-    # Then hardcopy works normally for the rest of the session
-    screen -S NAME -p 0 -X hardcopy output.txt
-    cat output.txt
+    # Then use hardcopy normally:
+    screen -S NAME -p 0 -X hardcopy output.txt && cat output.txt
     ```
-  - **From screenlog**: `cat screenlog.0` (contains all output since -L flag)
-  - **Last N lines**: `tail -N screenlog.0`
-  
-- **Monitor output**: `tail -f screenlog.0`
-  
+  - **Last N lines** (raw with ANSI codes): `tail -N screenlog.0`
+  - **Full scrollback** (raw with ANSI codes): `cat screenlog.0`
+
 - **Kill session**: `screen -S NAME -X quit`
-  
-- **Kill all sessions**: 
-  ```bash
-  screen -ls | grep -E "^\s+[0-9]+\." | awk '{print $1}' | while read s; do screen -S "${s%%.*}" -X quit; done
-  ```
 
-## Important Notes
-
-- **v4.0.3 hardcopy bug**: Common on macOS, hardcopy produces incomplete output unless session is attached first
-- **screenlog.0**: Contains raw output with ANSI escape sequences from session start
-  - **WARNING**: Always remove old `screenlog.0` before starting a new session to avoid mixing output
-- **File paths**: Use absolute paths or ./ prefix for hardcopy files
-- **No incremental reading**: Cannot easily get "only new output since last check"
-- **Character-by-character logging**: Interactive tools log every character redraw in screenlog
+### Important Notes
+- **Only kill sessions you started by name**
+- **hardcopy = viewport only**: Shows current screen (clean, rendered), perfect for TUIs/REPLs
+- **screenlog.0 = full raw output**: Contains all ANSI codes since session start
+- **v4.0.3 hardcopy bug**: Run expect workaround once per session
+- **TIP**: For interactive programs, use hardcopy after operations complete for clean view
 
 You are free to run `screen --help` if you require more information on the tool.

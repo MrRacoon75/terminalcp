@@ -1,0 +1,208 @@
+╭───────────────────────────────────────────────────╮
+│ ✻ Welcome to Claude Code!                         │
+│                                                   │
+│   /help for help, /status for your current setup  │
+│                                                   │
+│   cwd: /Users/badlogic/workspaces/tuicp           │
+╰───────────────────────────────────────────────────╯
+
+> Read /Users/badlogic/workspaces/tuicp/evaluation-results/claude-code--pro
+  ject-analysis--terminalcp--20250816004932691000-prompt.md and follow the 
+  instructions.
+
+⏺ I'll read the file and follow the instructions.
+
+⏺ Read(evaluation-results/claude-code--project-analysis--terminalcp--202508
+      16004932691000-prompt.md)
+  ⎿  Read 49 lines (ctrl+r to expand)
+
+⏺ I'll complete this task using the Terminalcp tool to start opencode,
+  switch to GPT OSS 120B, and analyze the project.
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"start","command":"opencode
+                                --model anthropic/claude-sonnet-4-20250514"
+                               ,"name":"opencode"})
+  ⎿  opencode
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode"})
+  ⎿  
+
+⏺ Let me wait a moment for opencode to start up and then check the output:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode","l
+                               ines":50})
+  ⎿  … +45 lines (ctrl+r to expand)
+
+⏺ Great! Opencode has started. Now I'll use the /models command to switch
+  to GPT OSS 120B:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdin","id":"opencode","da
+                               ta":"/models\r"})
+  ⎿  
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode"})
+  ⎿  … +45 lines (ctrl+r to expand)
+
+⏺ Perfect! The models dialog is open. I can see "GPT OSS 120B OpenRouter"
+  in the list. I'll type "GPT OSS 120B" to filter and then select it:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdin","id":"opencode","da
+                               ta":"GPT OSS 120B"})
+  ⎿  
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode"})
+  ⎿  … +45 lines (ctrl+r to expand)
+
+⏺ Great! The filter worked and now I can see "GPT OSS 120B OpenRouter" in
+  the filtered list. I'll press Enter to select it:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdin","id":"opencode","da
+                               ta":"\r"})
+  ⎿  
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode"})
+  ⎿  … +45 lines (ctrl+r to expand)
+
+⏺ Excellent! I can see that the model has been successfully switched to
+  "Groq GPT OSS 120B" as shown in the bottom right corner. Now I'll prompt
+  it to analyze the project by reading the README.md:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdin","id":"opencode","da
+                               ta":"Read README.md explain what this
+                               project does\r"})
+  ⎿  
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode"})
+  ⎿                                          
+
+       ┃  # Explaining project from README.md
+     … +45 lines (ctrl+r to expand)
+
+⏺ I can see the response is being generated. Let me wait for it to complete
+   and then capture the full response:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode","l
+                               ines":50})
+  ⎿                                          
+
+       ┃  # Explaining project from README.md
+     … +45 lines (ctrl+r to expand)
+
+⏺ The response appears to be complete. Now I need to capture the COMPLETE
+  response by scrolling up to see all the output. Let me get more lines to
+  capture the full response:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode","l
+                               ines":100})
+  ⎿                                          
+
+       ┃  # Explaining project from README.md
+     … +45 lines (ctrl+r to expand)
+
+⏺ I need to scroll up to capture the complete response. Let me use a much
+  larger line count to get the full analysis:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stdout","id":"opencode","l
+                               ines":200})
+  ⎿                                          
+
+       ┃  # Explaining project from README.md
+     … +45 lines (ctrl+r to expand)
+
+⏺ Let me try using the stream action to get the complete raw output since
+  the beginning:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stream","id":"opencode"})
+  ⎿  4;1m1u q b                     
+      b
+      b
+     … +210 lines (ctrl+r to expand)
+
+⏺ Perfect! Now I have the complete response. Let me clean up the session
+  and provide the summary:
+
+⏺ terminalcp - terminalcp (MCP)(args: {"action":"stop","id":"opencode"})
+  ⎿  stopped opencode
+
+⏺ TASK_COMPLETE
+
+  Full Model Response Summary
+
+  The GPT OSS 120B model successfully analyzed the project after reading
+  README.md and provided the following comprehensive explanation:
+
+  Project Overview – terminalcp
+
+  Purpose: terminalcp lets AI agents (or any program) control interactive
+  command-line tools just like a human would. It's essentially "Playwright
+  for the terminal": the agent can start a process, send keystrokes, read
+  output, and keep the session alive, all while preserving full terminal
+  emulation (colors, cursor movement, etc.).
+
+  Key capabilities:
+  • Debugging – drive LLDB, GDB, pdb, etc.
+  • AI-to-AI – run other AI assistants (Claude, Gemini, etc.) as
+  subprocesses.
+  • REPL / shell – interact with Python, Node, Ruby REPLs, DB shells,
+  system monitors.
+  • General CLI – any interactive CLI that expects human input.
+  • Multiple processes – run many sessions simultaneously without blocking.
+  • Attach – users can attach to AI-spawned sessions from their own
+  terminal (like screen/tmux) to watch or help.
+
+  Two output modes:
+  • Terminal mode (stdout) – returns the full rendered screen (good for
+  TUIs, debuggers).
+  • Stream mode – raw output, optional ANSI stripping, incremental reading
+  (good for logs, builds).
+
+  Architecture:
+  1. TerminalManager – core library that creates PTY sessions (via
+  node-pty), handles I/O, ANSI, and provides the API.
+  2. TerminalServer – background process that holds all sessions, listening
+   on a Unix-socket (~/.terminalcp/server.socket). Sessions persist across
+  client disconnects.
+  3. TerminalClient – used by both the CLI and the MCP server to talk to
+  the server over the socket.
+  4. User interfaces – MCP server (exposes a single terminalcp tool) and a
+  CLI (terminalcp command). Both use the same client-server protocol.
+
+  MCP usage – send JSON commands (e.g.,
+  {"action":"start","command":"python3 -i","name":"py"}) to start/stop
+  processes, send input (stdin), get output (stdout/stream), list sessions,
+   etc.
+
+  CLI usage – terminalcp start <name> "<command>", terminalcp stdin <name> 
+  "cmd" ::Enter, terminalcp stdout <name>, terminalcp stream <name> 
+  --since-last, etc.
+
+  Typical use-cases:
+  • Debug code step-by-step with LLDB/GDB.
+  • Run other AI agents as subprocesses.
+  • Drive REPLs, database shells, or any interactive TUI.
+  • Monitor long-running builds or logs.
+  • Attach from a real terminal to watch or intervene in AI-spawned
+  sessions.
+
+  Development:
+  • npm install → install deps.
+  • npm run build → build.
+  • npm test → run tests.
+
+  License – MIT.
+
+> /cost 
+  ⎿ Total cost:            $0.55
+    Total duration (API):  1m 16.9s
+    Total duration (wall): 1m 24.2s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+        claude-3-5-haiku:  266 input, 57 output, 0 cache read, 0 cache 
+    write
+           claude-sonnet:  150 input, 2.6k output, 1.0m cache read, 54.3k 
+    cache write
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ bypass permissions on (shift+tab to cycle)                 Auto-updating…
