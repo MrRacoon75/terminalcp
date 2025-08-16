@@ -1,40 +1,57 @@
 # Evaluation Framework
 
-A streamlined evaluation system for testing terminal multiplexer tools with various AI coding agents.
+A comprehensive evaluation system for testing terminal multiplexer tools with various AI coding agents. This framework automates the process of running tasks, capturing outputs, and using Claude to judge the results.
+
+## Overview
+
+The evaluation framework tests how well different AI agents (Claude Code, OpenCode, Gemini) can complete terminal-based tasks using various terminal multiplexer tools (terminalcp, tmux, screen). It provides automated testing, parallel execution, and AI-powered judging of results.
 
 ## Structure
 
 ```
 test/eval/
 ├── tasks/              # Task descriptions (markdown files)
-│   ├── debug-lldb.md
-│   ├── python-repl.md
-│   └── project-analysis.md
+│   ├── debug-lldb.md   # Debug a crashing C program with LLDB
+│   ├── python-repl.md  # Interactive Python REPL tasks
+│   └── project-analysis.md # Model switching and project analysis
 ├── tools/              # Tool instructions with MCP/CLI config
-│   ├── terminalcp.md   # MCP tool
-│   ├── terminalcp-cli.md # CLI tool
-│   ├── tmux.md         # CLI tool
-│   └── screen.md       # CLI tool
+│   ├── terminalcp.md   # MCP server version
+│   ├── terminalcp-cli.md # CLI version
+│   ├── tmux.md         # Terminal multiplexer
+│   └── screen.md       # GNU Screen
 ├── agents.ts           # Agent definitions and detection
 ├── runner.ts           # Core evaluation runner using TerminalManager
 ├── run.ts              # Main CLI entry point
-├── stats.ts            # Statistics generator with Claude judging
-└── analyze.ts          # Legacy results analyzer (use stats.ts instead)
+└── stats.ts            # Statistics generator with Claude judging
 ```
 
-## Key Design Decisions
+## Key Features
 
-1. **Uses TerminalManager directly** instead of CLI for better performance
-2. **Tasks and tools are markdown files** - easy to add/modify without code changes
-3. **Agent detection** based on unique UI markers (e.g., "esc to interrupt")
-4. **Automatic prompt structuring** - Task → Tool → Completion sections
-5. **MCP configuration management** - Creates config files for MCP-enabled agents
-6. **Repetition support** - Run same evaluation multiple times for consistency testing
-7. **Parallel execution** - Run multiple evaluations concurrently for faster results
+1. **Direct TerminalManager Integration** - Uses the core library directly for optimal performance
+2. **Markdown-based Configuration** - Tasks and tools defined in markdown for easy modification
+3. **Intelligent Agent Detection** - Identifies agent state using unique UI markers
+4. **Structured Prompt Generation** - Automatically builds consistent Task → Tool → Completion prompts
+5. **MCP Configuration Management** - Dynamically creates and cleans up MCP config files
+6. **Repetition Support** - Run evaluations multiple times for statistical significance
+7. **Parallel Execution** - Run multiple evaluations concurrently to save time
+8. **Multi-format Output Capture** - Saves scrollbuffer, stream, and ANSI-formatted outputs
+9. **AI-powered Judging** - Uses Claude to analyze results and compare tool performance
+10. **Comprehensive Statistics** - Extracts cost, duration, and token usage metrics
+
+## Quick Start
+
+```bash
+# Run default evaluation (claude agent, all tasks, all tools)
+npx tsx test/eval/run.ts
+
+# Analyze results with AI judging
+npx tsx test/eval/stats.ts
+```
 
 ## Usage
 
-### Run with various options:
+### Running Evaluations
+
 ```bash
 # Run all tasks/tools with default agent (claude)
 npx tsx test/eval/run.ts
@@ -42,31 +59,38 @@ npx tsx test/eval/run.ts
 # Specify agents, tasks, and tools
 npx tsx test/eval/run.ts --agents claude gemini --tasks python-repl --tools tmux screen
 
-# Run each evaluation 3 times
+# Run each evaluation 3 times for consistency testing
 npx tsx test/eval/run.ts --repeat 3
 
-# Run 4 evaluations in parallel
+# Run 4 evaluations in parallel for speed
 npx tsx test/eval/run.ts --parallel 4
 
-# Combine repeat and parallel
+# Combine repeat and parallel (e.g., 3 repetitions, 2 at a time)
 npx tsx test/eval/run.ts --repeat 3 --parallel 2
 
 # Use file paths for custom tasks/tools
 npx tsx test/eval/run.ts --tasks ./my-task.md --tools ~/custom-tool.md
 
+# Mix short names and file paths
+npx tsx test/eval/run.ts --tasks python-repl ./custom-task.md --tools tmux ~/my-tool.md
+
 # Get help
 npx tsx test/eval/run.ts --help
 ```
 
-### Command-line options:
-- `--agents <items...>` - Agent names (default: claude)
-- `--tasks <items...>` - Task names or file paths (default: all in test/eval/tasks/)
-- `--tools <items...>` - Tool names or file paths (default: all in test/eval/tools/)
-- `--repeat <n>` - Number of times to repeat each evaluation (default: 1)
-- `--parallel <n>` - Number of evaluations to run in parallel (default: 1)
-- `--help, -h` - Show help
+### Command-line Options
 
-### Generate statistics and judge results:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--agents <items...>` | Agent names (claude, gemini, opencode) | claude |
+| `--tasks <items...>` | Task names or file paths | All in test/eval/tasks/ |
+| `--tools <items...>` | Tool names or file paths | All in test/eval/tools/ |
+| `--repeat <n>` | Number of times to repeat each evaluation | 1 |
+| `--parallel <n>` | Number of evaluations to run in parallel | 1 |
+| `--help, -h` | Show help message | - |
+
+### Analyzing Results
+
 ```bash
 # Analyze all results in evaluation-results/ with Claude judging
 npx tsx test/eval/stats.ts
@@ -75,169 +99,351 @@ npx tsx test/eval/stats.ts
 npx tsx test/eval/stats.ts /path/to/results
 ```
 
-This will:
-1. Extract statistics from all evaluation runs
+The stats script will:
+1. Extract metrics from all evaluation runs (cost, duration, tokens)
 2. Use Claude to judge each agent/task/tool combination
-3. Compare tool performance for each task
-4. Output judge notes to console and save to files
-5. Generate `evaluation-summary.json` with all results and judgments
+3. Generate comparative analysis when multiple tools tested on same task
+4. Create judge files with detailed assessments
+5. Output `evaluation-summary.json` with complete results and judgments
 
-## How it works
+## How It Works
 
-1. **Loads tasks and tools from markdown files**
-   - Tasks from `test/eval/tasks/*.md` or custom paths
-   - Tools from `test/eval/tools/*.md` or custom paths
-   - Tools can specify MCP servers or CLI cleanup commands
+### Evaluation Pipeline
 
-2. **Constructs structured prompts:**
-   - **Task section**: What needs to be done
-   - **Tool section**: Which tool to use and how
-   - **Completion section**: Success/failure reporting instructions
+1. **Configuration Loading**
+   - Tasks loaded from `test/eval/tasks/*.md` or custom file paths
+   - Tools loaded from `test/eval/tools/*.md` or custom file paths
+   - Tools specify type (MCP/CLI) and optional cleanup commands via frontmatter
 
-3. **For each combination of agent × task × tool × repetition:**
-   - Creates MCP config files if needed (for MCP-enabled agents)
-   - Starts the agent using TerminalManager
-   - Waits for initialization (3 seconds)
-   - Sends: `Read {promptFile} and follow the instructions.`
-   - Monitors for the agent's "working" marker (30s timeout)
-   - If no response, sends nudge to proceed
-   - Waits for completion (5 minute timeout)
-   - Requests cost/token information
-   - Captures output in multiple formats (scrollbuffer, stream, stream-ansi)
-   - Saves to `evaluation-results/{agent}-{task}-{tool}-{timestamp}.log`
+2. **Prompt Construction**
+   - Automatically generates structured prompts with three sections:
+     - **Task**: Description of what needs to be done
+     - **Tool**: Specific tool to use with instructions
+     - **Completion**: Success/failure reporting (TASK_COMPLETE/TASK_FAILED)
+
+3. **Execution Flow (per evaluation)**
+   - Creates temporary MCP config files for MCP-enabled agents
+   - Starts agent process using TerminalManager
+   - Waits for initialization (configurable delay, default 3s)
+   - Sends prompt: `Read {promptFile} and follow the instructions.`
+   - Monitors for agent's "working" marker (30s timeout with nudge)
+   - Waits for task completion (5 minute timeout)
+   - Requests cost/token usage via agent's cost command
+   - Captures output in multiple formats
+   - Cleans up sessions and config files
    - Runs tool-specific cleanup commands
 
-4. **Agent detection markers:**
-   - Claude Code: "esc to interrupt"
-   - OpenCode: "esc interrupt"  
-   - Gemini: "esc to cancel"
+4. **Parallel Execution**
+   - Batches evaluations based on `--parallel` setting
+   - Manages cleanup at batch level to avoid conflicts
+   - Ensures unique timestamps even for concurrent runs
 
-5. **Output files (with timestamps):**
-   - `{agent}--{task}--{tool}--{timestamp}.log` - Error log (if failed)
-   - `{agent}--{task}--{tool}--{timestamp}-prompt.md` - Full prompt sent
-   - `{agent}--{task}--{tool}--{timestamp}-scrollbuffer.txt` - Terminal viewport
-   - `{agent}--{task}--{tool}--{timestamp}-stream.txt` - Raw output (no ANSI)
-   - `{agent}--{task}--{tool}--{timestamp}-stream-ansi.txt` - Raw output with ANSI
-   - `{agent}--{task}--{tool}--judge.md` - Judge prompt and response (after stats.ts)
-   - `{agent}--{task}--overall--judge.md` - Task-level tool comparison (after stats.ts)
+### Agent Configuration
 
-## Adding new content
+Agents are defined in `agents.ts` with these properties:
 
-### Add a new task
-Create a markdown file in `test/eval/tasks/`:
+```typescript
+{
+  name: string,           // Display name
+  command: string,        // CLI command to start agent
+  workingMarker: string,  // Text that appears when processing
+  costCommand: string,    // Command to get token usage
+  initDelay?: number,     // Initialization wait time (ms)
+  supportsMcp: boolean,   // Whether agent supports MCP
+  configFiles?: [{        // Config files to create for MCP
+    path: string,
+    template: (mcpServers) => object
+  }]
+}
+```
+
+**Currently Supported Agents:**
+- **Claude Code**: MCP-enabled, uses `/cost` command
+- **OpenCode**: No MCP support, uses `/usage` command  
+- **Gemini**: MCP-enabled, uses `/stats` command
+
+### Output Files
+
+Each evaluation generates multiple output files with timestamp-based naming:
+
+| File Pattern | Description |
+|--------------|-------------|
+| `{agent}--{task}--{tool}--{timestamp}-prompt.md` | Full structured prompt sent to agent |
+| `{agent}--{task}--{tool}--{timestamp}-scrollbuffer.txt` | Terminal viewport with scrollback |
+| `{agent}--{task}--{tool}--{timestamp}-stream.txt` | Raw output without ANSI codes |
+| `{agent}--{task}--{tool}--{timestamp}-stream-ansi.txt` | Raw output with ANSI codes |
+| `{agent}--{task}--{tool}--{timestamp}.log` | Error log (only if evaluation failed) |
+| `{agent}--{task}--{tool}--judge.md` | Judge analysis (generated by stats.ts) |
+| `{agent}--{task}--overall--judge.md` | Tool comparison (generated by stats.ts) |
+
+Timestamp format: `yyyymmddhhmmssSSS{counter}` (includes milliseconds and counter for uniqueness)
+
+## Adding New Components
+
+### Creating a New Task
+
+Create a markdown file in `test/eval/tasks/` with your task description:
+
 ```markdown
-Your task description here...
-Step-by-step instructions...
+# task-name.md
+Your task description here. Be specific about what needs to be accomplished.
+
+1. First step with clear instructions
+2. Second step with expected output
+3. Continue with numbered steps...
 
 After each step, verify the output before proceeding.
-Finally, get all output and summarize the results.
+Finally, summarize all results including specific findings.
 ```
-Note: Completion instructions (TASK_COMPLETE/TASK_FAILED) are added automatically.
 
-### Add a new tool
+**Note**: The framework automatically adds TASK_COMPLETE/TASK_FAILED instructions.
 
-#### CLI Tool
-Create a markdown file in `test/eval/tools/`:
+### Creating a New Tool
+
+Tools require frontmatter configuration followed by usage instructions.
+
+#### CLI Tool Example
+
 ```markdown
 ---
 {
   "type": "cli",
-  "cleanup": "cleanup command here"
+  "cleanup": "killall mytool 2>/dev/null || true"
 }
 ---
 
-### Core Commands
+### Quick Start (Typical Workflow)
+1. Start session: `mytool start NAME`
+2. Send input: `mytool send NAME "input"`
+3. Get output: `mytool output NAME`
+4. Clean up: `mytool stop NAME`
 
-- **Start**: `command to start`
-- **Send input**: `command to send input`
-...
+### Core Commands
+- **Start**: `mytool start NAME command args`
+- **Send input**: `mytool send NAME "text"`
+- **Get output**: `mytool output NAME`
+- **Stop**: `mytool stop NAME`
+
+### Important Notes
+- Only stop sessions you started by name
+- Additional tool-specific guidance...
 ```
 
-#### MCP Tool
+#### MCP Tool Example
+
 ```markdown
 ---
 {
   "type": "mcp",
   "mcpServers": {
-    "toolname": {
+    "mytool": {
       "type": "stdio",
       "command": "npx",
-      "args": ["tsx", "path/to/server.ts"]
+      "args": ["mytool", "--mcp"]
     }
   }
 }
 ---
 
+### Quick Start
+1. Start: `{"action": "start", "command": "cmd", "name": "NAME"}`
+2. Send: `{"action": "send", "id": "NAME", "data": "input\r"}`
+3. Get: `{"action": "output", "id": "NAME"}`
+4. Stop: `{"action": "stop", "id": "NAME"}`
+
 ### Important Notes
-- Instructions for using the MCP tool...
+- MCP-specific instructions...
 ```
 
-### Add a new agent
-Edit `agents.ts`:
+### Adding a New Agent
+
+Edit `agents.ts` to add your agent configuration:
+
 ```typescript
-newagent: {
-  name: "New Agent",
-  command: "newagent-cli",
-  workingMarker: "unique text when processing",
-  costCommand: "/command-for-costs",
-  initDelay: 3000,  // milliseconds
-  supportsMcp: false,  // or true with configFiles
-  configFiles: [{
-    path: "config.json",
-    template: (mcpServers) => ({ mcpServers: mcpServers || {} })
-  }]
-}
+export const AGENTS: Record<string, Agent> = {
+  // ... existing agents ...
+  
+  mynewagent: {
+    name: "My New Agent",
+    command: "mynewagent --model gpt-4",
+    workingMarker: "processing request",  // Unique text shown when working
+    costCommand: "/usage",                // Command to get token usage
+    initDelay: 3000,                      // Wait time after starting (ms)
+    supportsMcp: true,                    // Whether MCP is supported
+    configFiles: [                        // Config files to create (if MCP)
+      {
+        path: ".mynewagent/config.json",
+        template: (mcpServers) => ({
+          mcpServers: mcpServers || {},
+          // Other config options...
+        })
+      }
+    ]
+  }
+};
 ```
 
-## Output
+## Statistics and Judging
 
-Results are saved in `evaluation-results/` with timestamps:
-- Format: `{agent}--{task}--{tool}--{yyyymmddhhmmssSSS}{runcount}.{extension}`
-- Example: `claude-code--python-repl--tmux--20250815153045123000-scrollbuffer.txt`
+The `stats.ts` script provides comprehensive analysis of evaluation results using Claude as a judge.
 
-The timestamp includes milliseconds and a run counter to ensure uniqueness even when running in parallel.
+### Running Statistics
 
-### Tool Instructions
+```bash
+# Analyze default evaluation-results/ directory
+npx tsx test/eval/stats.ts
 
-All tools follow a standardized structure for efficiency:
+# Analyze custom directory
+npx tsx test/eval/stats.ts /path/to/results
+```
 
-#### Quick Start Section
-Each tool has a Quick Start workflow showing the typical usage pattern:
-1. Start session
-2. Send input  
-3. Get current viewport (clean, rendered)
-4. Clean up when done
+### Analysis Process
 
-#### Optimized for Efficiency
-- **Batching**: Send multiple commands before checking output
-- **Smart output retrieval**: Use viewport methods (hardcopy/capture-pane/stdout) for clean rendered views
-- **Consistent patterns**: All tools have similar command structures for easy comparison
-
-### Statistics and Judging
-
-After running evaluations, use `stats.ts` to:
-
-1. **Extract metrics** from each run:
-   - Success/failure (based on TASK_COMPLETE marker)
-   - Total cost and duration
+1. **Metrics Extraction**
+   - Success/failure detection (TASK_COMPLETE marker)
+   - Cost calculation from agent output
+   - Duration parsing (wall time)
    - Token usage by model
+   - Aggregation across multiple runs
 
-2. **Judge performance** using Claude:
-   - Individual tool assessment for each agent/task/tool combination
-   - Comparative analysis when multiple tools tested on same task
-   - Rankings based on success rate, efficiency, ease of use
+2. **Individual Tool Judging**
+   - Claude reads all prompt and output files
+   - Analyzes what went well and what failed
+   - Provides run-by-run assessment
+   - Generates actionable recommendations
 
-3. **Output structure** in `evaluation-summary.json`:
+3. **Comparative Analysis** (when multiple tools tested)
+   - Ranks tools by performance
+   - Compares success rates, costs, and durations
+   - Identifies patterns across tools
+   - Provides clear tool recommendations
+
+### Output Structure
+
+The analysis generates several outputs:
+
+#### Judge Files
+- `{agent}--{task}--{tool}--judge.md` - Individual tool assessment
+- `{agent}--{task}--overall--judge.md` - Comparative tool analysis
+
+#### Summary JSON (`evaluation-summary.json`)
 ```json
 {
   "agent": {
     "task": {
-      "judgeNotes": "Comparative analysis of tools",
+      "judgeNotes": "Tool comparison and rankings",
       "tool1": {
-        "judgeNotes": "Individual assessment",
-        "runs": [array of evaluation results]
+        "judgeNotes": "Detailed assessment",
+        "runs": [
+          {
+            "agent": "claude",
+            "task": "python-repl",
+            "tool": "tmux",
+            "timestamp": "20250815153045123000",
+            "success": true,
+            "totalCost": 0.0234,
+            "totalDurationWall": "45.2s",
+            "models": {
+              "claude-3-5-sonnet": {
+                "input": 15234,
+                "output": 892,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              }
+            }
+          }
+        ]
       }
     }
   }
 }
 ```
+
+## Best Practices
+
+### Tool Design Guidelines
+
+1. **Quick Start Section** - Provide a 4-step workflow for common usage
+2. **Consistent Commands** - Use similar patterns across tools
+3. **Clean Output Methods** - Prefer viewport/rendered output over raw streams
+4. **Batching Support** - Allow sending multiple commands efficiently
+5. **Clear Cleanup** - Provide reliable cleanup commands
+
+### Task Design Guidelines
+
+1. **Clear Steps** - Number each step explicitly
+2. **Verification Points** - Include "verify output" instructions
+3. **Specific Success Criteria** - Define what constitutes completion
+4. **Summary Requirements** - Request specific information in final summary
+
+### Running Evaluations
+
+1. **Start Small** - Test with single task/tool combinations first
+2. **Use Repetition** - Run 3-5 times for statistical significance
+3. **Leverage Parallelism** - Use `--parallel` for faster results
+4. **Monitor Progress** - Check viewport output shown during execution
+5. **Review Judge Notes** - Read AI assessments for insights
+
+## Troubleshooting
+
+### Common Issues
+
+**Agent Not Responding**
+- Check agent is installed and accessible
+- Verify workingMarker is correct in agents.ts
+- Increase initDelay if agent needs more startup time
+
+**MCP Configuration Errors**
+- Ensure MCP server paths are correct
+- Check config file permissions
+- Verify JSON syntax in tool frontmatter
+
+**Cleanup Failures**
+- Use `|| true` in cleanup commands to prevent errors
+- Test cleanup commands manually first
+- Check for process name variations
+
+**Parallel Execution Issues**
+- Reduce `--parallel` if seeing resource conflicts
+- Ensure cleanup commands handle multiple sessions
+- Check for port/socket conflicts
+
+### Debug Mode
+
+To see more detailed output during evaluation:
+- The runner shows viewport snapshots every 5-30 seconds
+- Check stream files for complete output
+- Use `stats.ts` to analyze partial results
+
+## Advanced Usage
+
+### Custom Evaluation Scenarios
+
+You can create specialized evaluation scenarios by:
+
+1. **Custom Task Files** - Write task-specific markdown files
+2. **Custom Tool Configurations** - Create tool variants with different settings
+3. **Agent Parameters** - Modify agent commands in agents.ts
+4. **Batch Scripts** - Chain multiple evaluation runs with different parameters
+
+### Integration with CI/CD
+
+The evaluation framework can be integrated into CI/CD pipelines:
+
+```bash
+# Run evaluation in CI
+npx tsx test/eval/run.ts --agents claude --tasks python-repl --tools terminalcp
+
+# Check for success
+npx tsx test/eval/stats.ts
+# Parse evaluation-summary.json for pass/fail criteria
+```
+
+### Extending the Framework
+
+The modular design allows for extensions:
+
+1. **New Agent Types** - Add support for additional AI coding assistants
+2. **Custom Judges** - Implement alternative judging strategies in stats.ts
+3. **Additional Metrics** - Extract more data points from evaluation runs
+4. **Visualization** - Build dashboards from evaluation-summary.json
