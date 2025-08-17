@@ -213,18 +213,18 @@ try {
 
 // Compile demo-buggy if needed for debug task
 const demoBuggyPath = resolve(config.outputDir, "demo-buggy");
-if (!existsSync(demoBuggyPath)) {
-	const sourceFile = resolve(__dirname, "../demo-buggy.c");
-	if (existsSync(sourceFile)) {
-		console.log(chalk.gray("Compiling demo-buggy..."));
-		const { execSync } = await import("node:child_process");
-		try {
-			execSync(`gcc -g -o ${demoBuggyPath} ${sourceFile}`);
-			console.log(chalk.green("Compiled demo-buggy"));
-		} catch (error) {
-			console.error(chalk.red("Failed to compile demo-buggy:"), error);
-			process.exit(1);
-		}
+const sourceFile = resolve(__dirname, "../demo-buggy.c");
+if (existsSync(sourceFile)) {
+	console.log(chalk.gray("Compiling demo-buggy..."));
+	const { execSync } = await import("node:child_process");
+	try {
+		// Use -g3 for maximum debug info and -fstandalone-debug to embed all debug info
+		// This prevents the "debug map object file does not exist" error in lldb
+		execSync(`gcc -g3 -fstandalone-debug -o ${demoBuggyPath} ${sourceFile}`);
+		console.log(chalk.green("Compiled demo-buggy"));
+	} catch (error) {
+		console.error(chalk.red("Failed to compile demo-buggy:"), error);
+		process.exit(1);
 	}
 }
 

@@ -1,28 +1,30 @@
 # Evaluation Framework
 
-A comprehensive evaluation system for testing terminal multiplexer tools with various AI coding agents. This framework automates the process of running tasks, capturing outputs, and using Claude to judge the results.
+A comprehensive evaluation system for testing terminal multiplexer tools with various AI coding agents. This framework automates the process of running tasks, capturing outputs, using Claude to judge the results, and generating interactive HTML reports.
 
 ## Overview
 
-The evaluation framework tests how well different AI agents (Claude Code, OpenCode, Gemini) can complete terminal-based tasks using various terminal multiplexer tools (terminalcp, tmux, screen). It provides automated testing, parallel execution, and AI-powered judging of results.
+The evaluation framework tests how well different AI agents (Claude Code, OpenCode, Gemini) can complete terminal-based tasks using various terminal multiplexer tools (terminalcp, tmux, screen). It provides automated testing, parallel execution, AI-powered judging of results, and visual reporting.
 
 ## Structure
 
 ```
 test/eval/
-├── tasks/              # Task descriptions (markdown files)
-│   ├── debug-lldb.md   # Debug a crashing C program with LLDB
-│   ├── python-repl.md  # Interactive Python REPL tasks
-│   └── project-analysis.md # Model switching and project analysis
-├── tools/              # Tool instructions with MCP/CLI config
-│   ├── terminalcp.md   # MCP server version
-│   ├── terminalcp-cli.md # CLI version
-│   ├── tmux.md         # Terminal multiplexer
-│   └── screen.md       # GNU Screen
-├── agents.ts           # Agent definitions and detection
-├── runner.ts           # Core evaluation runner using TerminalManager
-├── run.ts              # Main CLI entry point
-└── stats.ts            # Statistics generator with Claude judging
+├── tasks/                    # Task descriptions (markdown files)
+│   ├── debug-lldb.md        # Debug a crashing C program with LLDB
+│   ├── python-repl.md       # Interactive Python REPL tasks
+│   └── project-analysis.md  # Model switching and project analysis
+├── tools/                    # Tool instructions with MCP/CLI config
+│   ├── terminalcp.md        # MCP server version (standard)
+│   ├── terminalcp-cli.md    # CLI version
+│   ├── terminalcp-stream.md # MCP with stream optimization
+│   ├── tmux.md              # Terminal multiplexer
+│   └── screen.md            # GNU Screen
+├── agents.ts                # Agent definitions and detection
+├── runner.ts                # Core evaluation runner using TerminalManager
+├── run.ts                   # Main CLI entry point
+├── stats.ts                 # Statistics generator with Claude judging
+└── report.ts                # HTML report generator
 ```
 
 ## Key Features
@@ -37,6 +39,8 @@ test/eval/
 8. **Multi-format Output Capture** - Saves scrollbuffer, stream, and ANSI-formatted outputs
 9. **AI-powered Judging** - Uses Claude to analyze results and compare tool performance
 10. **Comprehensive Statistics** - Extracts cost, duration, and token usage metrics
+11. **Interactive HTML Reports** - Self-contained reports with charts and responsive tables
+12. **Dynamic Tool Discovery** - Automatically detects and includes new tools in reports
 
 ## Quick Start
 
@@ -44,8 +48,14 @@ test/eval/
 # Run default evaluation (claude agent, all tasks, all tools)
 npx tsx test/eval/run.ts
 
-# Analyze results with AI judging
+# Analyze results with AI judging and generate HTML report
 npx tsx test/eval/stats.ts
+
+# Skip judging (faster, metrics only)
+npx tsx test/eval/stats.ts --no-judge
+
+# Generate HTML report from existing summary
+npx tsx test/eval/report.ts evaluation-results/evaluation-summary.json
 ```
 
 ## Usage
@@ -97,14 +107,40 @@ npx tsx test/eval/stats.ts
 
 # Analyze results in a specific directory
 npx tsx test/eval/stats.ts /path/to/results
+
+# Skip Claude judging (metrics only, much faster)
+npx tsx test/eval/stats.ts --no-judge
+
+# Analyze specific directory without judging
+npx tsx test/eval/stats.ts /path/to/results --no-judge
 ```
 
 The stats script will:
 1. Extract metrics from all evaluation runs (cost, duration, tokens)
-2. Use Claude to judge each agent/task/tool combination
+2. Use Claude to judge each agent/task/tool combination (unless --no-judge)
 3. Generate comparative analysis when multiple tools tested on same task
 4. Create judge files with detailed assessments
 5. Output `evaluation-summary.json` with complete results and judgments
+6. Generate `evaluation-summary.html` with interactive visualizations
+
+### Generating HTML Reports
+
+```bash
+# Generate report from existing summary (automatic with stats.ts)
+npx tsx test/eval/report.ts evaluation-results/evaluation-summary.json
+
+# Generate report from custom location
+npx tsx test/eval/report.ts /path/to/evaluation-summary.json
+```
+
+The HTML report includes:
+- Performance overview cards for each tool
+- Success rate tables with color coding
+- Cost analysis (total and average with standard deviation)
+- Time analysis (total and average)
+- Interactive charts for token usage (Chart.js)
+- Responsive design for mobile and desktop
+- Automatic detection of all tools and tasks
 
 ## How It Works
 
@@ -114,6 +150,7 @@ The stats script will:
    - Tasks loaded from `test/eval/tasks/*.md` or custom file paths
    - Tools loaded from `test/eval/tools/*.md` or custom file paths
    - Tools specify type (MCP/CLI) and optional cleanup commands via frontmatter
+   - Frontmatter parsed with support for both Unix and Windows line endings
 
 2. **Prompt Construction**
    - Automatically generates structured prompts with three sections:
@@ -175,8 +212,29 @@ Each evaluation generates multiple output files with timestamp-based naming:
 | `{agent}--{task}--{tool}--{timestamp}.log` | Error log (only if evaluation failed) |
 | `{agent}--{task}--{tool}--judge.md` | Judge analysis (generated by stats.ts) |
 | `{agent}--{task}--overall--judge.md` | Tool comparison (generated by stats.ts) |
+| `evaluation-summary.json` | Complete results with metrics and judgments |
+| `evaluation-summary.html` | Interactive HTML report with charts |
 
 Timestamp format: `yyyymmddhhmmssSSS{counter}` (includes milliseconds and counter for uniqueness)
+
+## Tool Optimization Strategies
+
+### Stream vs Stdout
+
+The framework includes optimized tool variants that demonstrate different output strategies:
+
+1. **Standard (stdout)**: Best for TUIs and programs with complex terminal manipulation
+   - Example: `terminalcp.md` - uses stdout for full terminal state
+
+2. **Stream Optimized**: Best for simple line-based tools (debuggers, REPLs)
+   - Example: `terminalcp-stream.md` - uses stream with `since_last: true` and `strip_ansi: true`
+   - Reduces redundant data transfer
+   - Cleaner output for tools that just append text
+
+3. **Viewport-only Programs**: For editors and viewers
+   - Get terminal size with `term-size` action
+   - Use `stdout` with `lines` parameter matching terminal height
+   - Avoids transferring unnecessary scrollback
 
 ## Adding New Components
 
@@ -287,26 +345,16 @@ export const AGENTS: Record<string, Agent> = {
 
 The `stats.ts` script provides comprehensive analysis of evaluation results using Claude as a judge.
 
-### Running Statistics
-
-```bash
-# Analyze default evaluation-results/ directory
-npx tsx test/eval/stats.ts
-
-# Analyze custom directory
-npx tsx test/eval/stats.ts /path/to/results
-```
-
 ### Analysis Process
 
 1. **Metrics Extraction**
    - Success/failure detection (TASK_COMPLETE marker)
    - Cost calculation from agent output
    - Duration parsing (wall time)
-   - Token usage by model
+   - Token usage by model (Sonnet, Haiku, cache)
    - Aggregation across multiple runs
 
-2. **Individual Tool Judging**
+2. **Individual Tool Judging** (unless --no-judge)
    - Claude reads all prompt and output files
    - Analyzes what went well and what failed
    - Provides run-by-run assessment
@@ -319,8 +367,6 @@ npx tsx test/eval/stats.ts /path/to/results
    - Provides clear tool recommendations
 
 ### Output Structure
-
-The analysis generates several outputs:
 
 #### Judge Files
 - `{agent}--{task}--{tool}--judge.md` - Individual tool assessment
@@ -365,7 +411,7 @@ The analysis generates several outputs:
 
 1. **Quick Start Section** - Provide a 4-step workflow for common usage
 2. **Consistent Commands** - Use similar patterns across tools
-3. **Clean Output Methods** - Prefer viewport/rendered output over raw streams
+3. **Output Strategy** - Choose appropriate method (stdout/stream) for tool type
 4. **Batching Support** - Allow sending multiple commands efficiently
 5. **Clear Cleanup** - Provide reliable cleanup commands
 
@@ -382,7 +428,8 @@ The analysis generates several outputs:
 2. **Use Repetition** - Run 3-5 times for statistical significance
 3. **Leverage Parallelism** - Use `--parallel` for faster results
 4. **Monitor Progress** - Check viewport output shown during execution
-5. **Review Judge Notes** - Read AI assessments for insights
+5. **Skip Judging Initially** - Use `--no-judge` for quick metrics
+6. **Review Judge Notes** - Read AI assessments for deeper insights
 
 ## Troubleshooting
 
@@ -408,12 +455,17 @@ The analysis generates several outputs:
 - Ensure cleanup commands handle multiple sessions
 - Check for port/socket conflicts
 
+**Windows Line Ending Issues**
+- Framework handles both `\r\n` and `\n` in markdown frontmatter
+- Use text editor that preserves line endings
+
 ### Debug Mode
 
 To see more detailed output during evaluation:
 - The runner shows viewport snapshots every 5-30 seconds
 - Check stream files for complete output
 - Use `stats.ts` to analyze partial results
+- View HTML reports for visual analysis
 
 ## Advanced Usage
 
@@ -434,9 +486,11 @@ The evaluation framework can be integrated into CI/CD pipelines:
 # Run evaluation in CI
 npx tsx test/eval/run.ts --agents claude --tasks python-repl --tools terminalcp
 
-# Check for success
-npx tsx test/eval/stats.ts
+# Generate metrics without judging (faster for CI)
+npx tsx test/eval/stats.ts --no-judge
+
 # Parse evaluation-summary.json for pass/fail criteria
+jq '.["claude-code"]["python-repl"]["terminalcp"].runs[].success' evaluation-results/evaluation-summary.json
 ```
 
 ### Extending the Framework
@@ -446,4 +500,24 @@ The modular design allows for extensions:
 1. **New Agent Types** - Add support for additional AI coding assistants
 2. **Custom Judges** - Implement alternative judging strategies in stats.ts
 3. **Additional Metrics** - Extract more data points from evaluation runs
-4. **Visualization** - Build dashboards from evaluation-summary.json
+4. **Custom Reports** - Build specialized visualizations from evaluation-summary.json
+5. **Tool Variants** - Create optimized versions for specific use cases
+
+## Performance Insights
+
+Based on evaluation results:
+
+1. **Token Usage Patterns**
+   - Stream-based tools may use more tokens due to increased polling
+   - Verbose tool instructions increase base token usage
+   - MCP routing adds overhead per tool call
+
+2. **Optimization Trade-offs**
+   - Data transfer efficiency vs interaction efficiency
+   - Incremental output may encourage more frequent polling
+   - Balance between guidance detail and token cost
+
+3. **Tool Selection**
+   - Simple line-based tools: Use stream with since_last
+   - Complex TUIs: Use stdout for full terminal state
+   - Viewport-only apps: Use stdout with lines parameter

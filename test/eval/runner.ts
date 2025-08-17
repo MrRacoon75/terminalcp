@@ -117,6 +117,9 @@ export class EvalRunner {
 	 * Parse tool configuration from markdown frontmatter
 	 */
 	private parseToolConfig(content: string): { config: ToolConfig; instructions: string } {
+		// Normalize line endings
+		content = content.replace(/\r\n/g, "\n");
+
 		// Check if content has frontmatter
 		if (!content.startsWith("---\n")) {
 			// Default to CLI tool if no frontmatter
@@ -218,26 +221,6 @@ export class EvalRunner {
 		const runInfo = runNumber && totalRuns ? ` (run ${runNumber}/${totalRuns})` : "";
 		console.log(chalk.cyan(`\nStarting: ${evalIdWithTime}${runInfo}`));
 
-		// Clean up old results for this evaluation
-		const filesToClean = [
-			outputFile,
-			outputFile.replace(".log", "-prompt.md"),
-			outputFile.replace(".log", "-scrollbuffer.txt"),
-			outputFile.replace(".log", "-stream.txt"),
-			outputFile.replace(".log", "-stream-ansi.txt"),
-		];
-
-		for (const file of filesToClean) {
-			if (existsSync(file)) {
-				try {
-					unlinkSync(file);
-					console.log(chalk.gray(`  Cleaned up old file: ${file.split("/").pop()}`));
-				} catch {
-					// Ignore cleanup errors
-				}
-			}
-		}
-
 		// Extract tool name from toolId (e.g., "screen" from "screen" or "terminalcp-cli" from "terminalcp-cli")
 		const toolName = toolId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -329,16 +312,39 @@ Complete the task using only the tool specified above.
 				// Wait for completion (monitor for marker disappearing or timeout)
 				let stillWorking = true;
 				let workTime = 0;
-				const maxWorkTime = 300; // 5 minutes max
+				const maxWorkTime = 600; // 5 minutes max
 
-				while (stillWorking && workTime < maxWorkTime) {
-					await this.sleep(5000); // Check every 5 seconds
-					workTime += 5;
+				let firstProgress = true;
+				let notWorkingCount = 0; // Count how many times we've seen the agent not working
+				const graceSeconds = 1; // Grace period in seconds
+
+				while ((stillWorking || notWorkingCount < graceSeconds) && workTime < maxWorkTime) {
+					await this.sleep(1000); // Check every second
+					workTime += 1;
 
 					const output = await this.terminal.getOutput(sessionId);
-					stillWorking = isAgentWorking(agent, output);
+					const currentlyWorking = isAgentWorking(agent, output);
 
-					// Show progress every 30 seconds
+					// Track if agent stopped working (for grace period)
+					if (!currentlyWorking) {
+						notWorkingCount++;
+					} else {
+						notWorkingCount = 0; // Reset if working again
+					}
+
+					// Update stillWorking based on grace period
+					stillWorking = currentlyWorking || notWorkingCount < graceSeconds;
+
+					// Clear previous output if not first iteration
+					if (!firstProgress) {
+						// Move cursor up to start of previous progress output (2 header lines + 24 viewport lines + 1 footer line = 27 lines)
+						process.stdout.write("\x1b[27A");
+						// Clear from cursor to end of screen
+						process.stdout.write("\x1b[J");
+					}
+					firstProgress = false;
+
+					// Show progress every second
 					console.log(chalk.gray(`  Still working on ${chalk.blue(evalIdWithTime)} (${workTime}s)`));
 					console.log(chalk.dim("  --- Current viewport ---"));
 					const lines = output.split("\n").slice(-24); // Show last 24 lines

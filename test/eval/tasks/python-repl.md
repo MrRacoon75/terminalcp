@@ -10,3 +10,7 @@ Start a Python REPL and complete these steps:
 After each input, check the output to confirm your command executed correctly before proceeding to the next step.
 
 Finally, get all the output and summarize the results, including whether 97 is prime.
+
+The task is NOT COMPLETE before you have reported the result summary and whether 97 is prime to the user!
+
+**Note:** The Python REPL auto-indents after colons. When entering indented lines (like function bodies), do NOT add leading spaces - just type the code and let the REPL handle indentation.

@@ -4,13 +4,7 @@ import { query, type SDKMessage } from "@anthropic-ai/claude-code";
 import chalk from "chalk";
 import * as fs from "fs";
 import * as path from "path";
-
-interface ModelUsage {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-}
+import { getAgent, type ModelUsage } from "./agents";
 
 interface EvaluationResult {
 	agent: string;
@@ -65,32 +59,6 @@ async function claude(promptFile: string, systemPrompt?: string): Promise<string
 	throw new Error(`Claude failed to respond successfully: ${JSON.stringify(messages)}`);
 }
 
-function parseUsageString(usageStr: string): ModelUsage {
-	// Parse strings like "100.6k input, 1.5k output, 0 cache read, 0 cache write"
-	// or "498 input, 95 output, 0 cache read, 0 cache write"
-
-	const parseValue = (str: string): number => {
-		const match = str.match(/^([\d.]+)([km]?)/);
-		if (!match) return 0;
-
-		const num = parseFloat(match[1]);
-		const unit = match[2];
-
-		if (unit === "k") return num * 1000;
-		if (unit === "m") return num * 1000000;
-		return num;
-	};
-
-	const parts = usageStr.split(",").map((s) => s.trim());
-
-	const input = parseValue(parts[0]);
-	const output = parseValue(parts[1]);
-	const cacheRead = parseValue(parts[2]);
-	const cacheWrite = parseValue(parts[3]);
-
-	return { input, output, cacheRead, cacheWrite };
-}
-
 function extractStats(filePath: string): EvaluationResult | null {
 	// Extract agent--task--tool--timestamp from filename
 	const basename = path.basename(filePath);
@@ -101,46 +69,27 @@ function extractStats(filePath: string): EvaluationResult | null {
 		return null;
 	}
 
-	const [, agent, task, tool, timestamp] = match;
+	const [, agentName, task, tool, timestamp] = match;
 
 	// Read entire file
 	const content = fs.readFileSync(filePath, "utf-8");
-	const lines = content.split("\n");
-	const lastLines = lines.slice(-100).join("\n");
 
 	// Check for success - look for TASK_COMPLETE in entire file
 	const success = content.includes("TASK_COMPLETE");
 
-	// Extract cost information
-	const costMatch = lastLines.match(/Total cost:\s+\$?([\d.]+)/);
-	const totalCost = costMatch ? parseFloat(costMatch[1]) : 0;
-
-	// Extract wall time
-	const wallTimeMatch = lastLines.match(/Total duration \(wall\):\s+([\dm\s.]+s)/);
-	const totalDurationWall = wallTimeMatch ? wallTimeMatch[1].trim() : "";
-
-	// Extract model usage
-	const models: Record<string, ModelUsage> = {};
-
-	// Look for usage by model section
-	const usageSection = lastLines.match(/Usage by model:([\s\S]*?)(?:\n\n|\n╭|$)/);
-
-	if (usageSection) {
-		const usageLines = usageSection[1].split("\n").filter((line) => line.trim());
-
-		for (const line of usageLines) {
-			// Match model name and usage
-			const modelMatch = line.match(/^\s*([\w-]+):\s+(.*)/);
-			if (modelMatch) {
-				const modelName = modelMatch[1].trim();
-				const usageStr = modelMatch[2].trim();
-				models[modelName] = parseUsageString(usageStr);
-			}
-		}
+	// Get the agent to use its specific parser
+	const agent = getAgent(agentName);
+	if (!agent) {
+		console.error(chalk.yellow(`Unknown agent: ${agentName}`));
+		return null;
 	}
 
+	// Use agent-specific usage parser
+	const usageData = agent.parseUsage(content);
+	const { totalCost, totalDurationWall, models } = usageData;
+
 	return {
-		agent,
+		agent: agentName,
 		task,
 		tool,
 		timestamp,
@@ -152,12 +101,18 @@ function extractStats(filePath: string): EvaluationResult | null {
 }
 
 async function main() {
+	// Parse command line arguments
+	const args = process.argv.slice(2);
+	const noJudge = args.includes("--no-judge");
+	const evalDirArg = args.find((arg) => !arg.startsWith("--"));
+
 	// Get evaluation directory from command line argument or use default
-	const evalDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(process.cwd(), "evaluation-results");
+	const evalDir = evalDirArg ? path.resolve(evalDirArg) : path.join(process.cwd(), "evaluation-results");
 
 	if (!fs.existsSync(evalDir)) {
 		console.error(chalk.red(`Evaluation directory not found: ${evalDir}`));
-		console.error(chalk.gray("Usage: npx tsx test/eval/stats.ts [evaluation-directory]"));
+		console.error(chalk.gray("Usage: npx tsx test/eval/stats.ts [evaluation-directory] [--no-judge]"));
+		console.error(chalk.gray("  --no-judge: Skip Claude judge analysis"));
 		process.exit(1);
 	}
 
@@ -201,51 +156,71 @@ async function main() {
 		}
 	}
 
-	// Now run Claude to judge each agent/task/tool combination
-	console.log(chalk.bold.white("\n=== Running Claude Judge ===\n"));
-
+	// Initialize judgedResults - will be populated based on whether judging is enabled
 	const judgedResults: Record<string, Record<string, JudgedTask>> = {};
 
-	// Collect all judging tasks
-	interface JudgeTask {
-		agent: string;
-		task: string;
-		tool: string;
-		results: EvaluationResult[];
-	}
+	if (noJudge) {
+		// Skip judging, just build basic structure with the raw results
+		console.log(chalk.yellow("\n=== Skipping Claude Judge (--no-judge flag) ===\n"));
 
-	const judgeTasks: JudgeTask[] = [];
-	for (const [agent, tasks] of Object.entries(allResults)) {
-		for (const [task, tools] of Object.entries(tasks)) {
-			for (const [tool, results] of Object.entries(tools)) {
-				judgeTasks.push({ agent, task, tool, results });
+		for (const [agent, tasks] of Object.entries(allResults)) {
+			if (!judgedResults[agent]) judgedResults[agent] = {};
+
+			for (const [task, tools] of Object.entries(tasks)) {
+				if (!judgedResults[agent][task]) judgedResults[agent][task] = { judgeNotes: "" };
+
+				for (const [tool, results] of Object.entries(tools)) {
+					judgedResults[agent][task][tool] = {
+						judgeNotes: "Judging skipped (--no-judge flag)",
+						runs: results,
+					};
+				}
 			}
 		}
-	}
+	} else {
+		// Now run Claude to judge each agent/task/tool combination
+		console.log(chalk.bold.white("\n=== Running Claude Judge ===\n"));
 
-	console.log(chalk.gray(`Total tool combinations to judge: ${judgeTasks.length}`));
-	console.log(chalk.gray(`Running up to 10 judges in parallel...\n`));
+		// Collect all judging tasks
+		interface JudgeTask {
+			agent: string;
+			task: string;
+			tool: string;
+			results: EvaluationResult[];
+		}
 
-	// Function to judge a single tool combination
-	const judgeToolCombination = async (
-		judgeTask: JudgeTask,
-	): Promise<{
-		agent: string;
-		task: string;
-		tool: string;
-		judgment: JudgedResults;
-	}> => {
-		const { agent, task, tool, results } = judgeTask;
-		console.log(chalk.cyan(`Starting judge for ${agent}/${task}/${tool} (${results.length} runs)...`));
+		const judgeTasks: JudgeTask[] = [];
+		for (const [agent, tasks] of Object.entries(allResults)) {
+			for (const [task, tools] of Object.entries(tasks)) {
+				for (const [tool, results] of Object.entries(tools)) {
+					judgeTasks.push({ agent, task, tool, results });
+				}
+			}
+		}
 
-		// Build list of files for Claude to read
-		const fileList = results.flatMap((r) => {
-			const base = `${agent}--${task}--${tool}--${r.timestamp}`;
-			return [`evaluation-results/${base}-prompt.md`, `evaluation-results/${base}-scrollbuffer.txt`];
-		});
+		console.log(chalk.gray(`Total tool combinations to judge: ${judgeTasks.length}`));
+		console.log(chalk.gray(`Running up to 10 judges in parallel...\n`));
 
-		// Create judge prompt
-		const judgePrompt = `Analyze these evaluation runs for ${agent} using ${tool} on ${task}.
+		// Function to judge a single tool combination
+		const judgeToolCombination = async (
+			judgeTask: JudgeTask,
+		): Promise<{
+			agent: string;
+			task: string;
+			tool: string;
+			judgment: JudgedResults;
+		}> => {
+			const { agent, task, tool, results } = judgeTask;
+			console.log(chalk.cyan(`Starting judge for ${agent}/${task}/${tool} (${results.length} runs)...`));
+
+			// Build list of files for Claude to read
+			const fileList = results.flatMap((r) => {
+				const base = `${agent}--${task}--${tool}--${r.timestamp}`;
+				return [`evaluation-results/${base}-prompt.md`, `evaluation-results/${base}-scrollbuffer.txt`];
+			});
+
+			// Create judge prompt
+			const judgePrompt = `Analyze these evaluation runs for ${agent} using ${tool} on ${task}.
 
 The runs are located in evaluation-results/ with filenames:
 ${fileList.join("\n")}
@@ -278,85 +253,85 @@ Write 2-3 specific, actionable improvements that would help the agent perform be
 
 REMINDER: You MUST follow this EXACT format. Do not write a summary paragraph. Do not skip sections. Do not use placeholder text. Start your response with "## Overall Performance" and follow the format exactly.`;
 
-		// Write prompt to file
-		const promptFile = path.join(evalDir, `${agent}--${task}--${tool}--judge.md`);
-		fs.writeFileSync(promptFile, judgePrompt);
+			// Write prompt to file
+			const promptFile = path.join(evalDir, `${agent}--${task}--${tool}--judge.md`);
+			fs.writeFileSync(promptFile, judgePrompt);
 
-		try {
-			// Call Claude
-			const judgeNotes = await claude(promptFile);
+			try {
+				// Call Claude
+				const judgeNotes = await claude(promptFile);
 
-			console.log(chalk.green(`✓ Completed ${agent}/${task}/${tool}`));
+				console.log(chalk.green(`✓ Completed ${agent}/${task}/${tool}`));
 
-			// Append judge response to the prompt file
-			const fullContent = judgePrompt + "\n\n---\n\n# Judge Response\n\n" + judgeNotes;
-			fs.writeFileSync(promptFile, fullContent);
+				// Append judge response to the prompt file
+				const fullContent = judgePrompt + "\n\n---\n\n# Judge Response\n\n" + judgeNotes;
+				fs.writeFileSync(promptFile, fullContent);
 
-			return {
-				agent,
-				task,
-				tool,
-				judgment: {
-					judgeNotes,
-					runs: results,
-				},
-			};
-		} catch (error) {
-			console.error(chalk.red(`✗ Failed ${agent}/${task}/${tool}:`), error);
-			return {
-				agent,
-				task,
-				tool,
-				judgment: {
-					judgeNotes: `Error during judging: ${error}`,
-					runs: results,
-				},
-			};
-		}
-	};
-
-	// Process in batches of 10
-	const batchSize = 10;
-	const allJudgments: Array<{ agent: string; task: string; tool: string; judgment: JudgedResults }> = [];
-
-	for (let i = 0; i < judgeTasks.length; i += batchSize) {
-		const batch = judgeTasks.slice(i, Math.min(i + batchSize, judgeTasks.length));
-		console.log(
-			chalk.yellow(
-				`\nProcessing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(judgeTasks.length / batchSize)}`,
-			),
-		);
-
-		const batchResults = await Promise.all(batch.map(judgeToolCombination));
-		allJudgments.push(...batchResults);
-	}
-
-	// Organize judgments back into nested structure
-	for (const [agent, tasks] of Object.entries(allResults)) {
-		if (!judgedResults[agent]) judgedResults[agent] = {};
-
-		for (const [task, tools] of Object.entries(tasks)) {
-			if (!judgedResults[agent][task]) judgedResults[agent][task] = { judgeNotes: "" };
-
-			// Collect tool judgments for this task
-			const toolJudgments: Record<string, JudgedResults> = {};
-
-			for (const toolName of Object.keys(tools)) {
-				const judgment = allJudgments.find((j) => j.agent === agent && j.task === task && j.tool === toolName);
-				if (judgment) {
-					toolJudgments[toolName] = judgment.judgment;
-				}
+				return {
+					agent,
+					task,
+					tool,
+					judgment: {
+						judgeNotes,
+						runs: results,
+					},
+				};
+			} catch (error) {
+				console.error(chalk.red(`✗ Failed ${agent}/${task}/${tool}:`), error);
+				return {
+					agent,
+					task,
+					tool,
+					judgment: {
+						judgeNotes: `Error during judging: ${error}`,
+						runs: results,
+					},
+				};
 			}
+		};
 
-			// Now judge the task overall, comparing tools
-			if (Object.keys(toolJudgments).length > 1) {
-				console.log(
-					chalk.cyan(
-						`\nJudging ${agent}/${task} overall (comparing ${Object.keys(toolJudgments).length} tools)...`,
-					),
-				);
+		// Process in batches of 10
+		const batchSize = 10;
+		const allJudgments: Array<{ agent: string; task: string; tool: string; judgment: JudgedResults }> = [];
 
-				const taskJudgePrompt = `Compare how different tools performed on the ${task} task for ${agent}.
+		for (let i = 0; i < judgeTasks.length; i += batchSize) {
+			const batch = judgeTasks.slice(i, Math.min(i + batchSize, judgeTasks.length));
+			console.log(
+				chalk.yellow(
+					`\nProcessing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(judgeTasks.length / batchSize)}`,
+				),
+			);
+
+			const batchResults = await Promise.all(batch.map(judgeToolCombination));
+			allJudgments.push(...batchResults);
+		}
+
+		// Organize judgments back into nested structure
+		for (const [agent, tasks] of Object.entries(allResults)) {
+			if (!judgedResults[agent]) judgedResults[agent] = {};
+
+			for (const [task, tools] of Object.entries(tasks)) {
+				if (!judgedResults[agent][task]) judgedResults[agent][task] = { judgeNotes: "" };
+
+				// Collect tool judgments for this task
+				const toolJudgments: Record<string, JudgedResults> = {};
+
+				for (const toolName of Object.keys(tools)) {
+					const judgment = allJudgments.find((j) => j.agent === agent && j.task === task && j.tool === toolName);
+					if (judgment) {
+						toolJudgments[toolName] = judgment.judgment;
+					}
+				}
+
+				// Now judge the task overall, comparing tools
+				if (Object.keys(toolJudgments).length > 1) {
+					console.log(
+						chalk.cyan(
+							`\nJudging ${agent}/${task} overall (comparing ${Object.keys(toolJudgments).length} tools)...`,
+						),
+					);
+
+					const taskJudgePrompt = `Compare how different tools performed on the ${task} task for ${agent}.
 
 You have already judged each tool individually. Here are the summaries with metrics:
 
@@ -449,46 +424,53 @@ Write 2-3 sentences with a clear recommendation of which tool should be preferre
 
 REMINDER: Start your response with "## Tool Comparison for ${task}" and follow this EXACT format. Do not write any introductory text.`;
 
-				// Write prompt to file
-				const taskPromptFile = path.join(evalDir, `${agent}--${task}--overall--judge.md`);
-				fs.writeFileSync(taskPromptFile, taskJudgePrompt);
+					// Write prompt to file
+					const taskPromptFile = path.join(evalDir, `${agent}--${task}--overall--judge.md`);
+					fs.writeFileSync(taskPromptFile, taskJudgePrompt);
 
-				try {
-					// Call Claude
-					const taskJudgeNotes = await claude(taskPromptFile);
+					try {
+						// Call Claude
+						const taskJudgeNotes = await claude(taskPromptFile);
 
-					console.log(chalk.green(`✓ Completed task comparison for ${agent}/${task}`));
+						console.log(chalk.green(`✓ Completed task comparison for ${agent}/${task}`));
 
-					// Store task-level judge notes
+						// Store task-level judge notes
+						judgedResults[agent][task] = {
+							judgeNotes: taskJudgeNotes,
+							...toolJudgments,
+						};
+
+						// Append judge response to the prompt file
+						const fullContent = taskJudgePrompt + "\n\n---\n\n# Judge Response\n\n" + taskJudgeNotes;
+						fs.writeFileSync(taskPromptFile, fullContent);
+					} catch (error) {
+						console.error(chalk.red(`Failed to judge ${agent}/${task} overall:`), error);
+						judgedResults[agent][task] = {
+							judgeNotes: `Error during task judging: ${error}`,
+							...toolJudgments,
+						};
+					}
+				} else {
+					// Only one tool, no comparison needed
 					judgedResults[agent][task] = {
-						judgeNotes: taskJudgeNotes,
-						...toolJudgments,
-					};
-
-					// Append judge response to the prompt file
-					const fullContent = taskJudgePrompt + "\n\n---\n\n# Judge Response\n\n" + taskJudgeNotes;
-					fs.writeFileSync(taskPromptFile, fullContent);
-				} catch (error) {
-					console.error(chalk.red(`Failed to judge ${agent}/${task} overall:`), error);
-					judgedResults[agent][task] = {
-						judgeNotes: `Error during task judging: ${error}`,
+						judgeNotes: "Only one tool tested for this task",
 						...toolJudgments,
 					};
 				}
-			} else {
-				// Only one tool, no comparison needed
-				judgedResults[agent][task] = {
-					judgeNotes: "Only one tool tested for this task",
-					...toolJudgments,
-				};
 			}
 		}
-	}
+	} // End of judging block (else clause)
 
 	// Write single JSON file with judged results
 	const outputPath = path.join(evalDir, "evaluation-summary.json");
 	fs.writeFileSync(outputPath, JSON.stringify(judgedResults, null, 2));
 	console.log(chalk.green(`\n✓ Written judged results to: ${outputPath}`));
+
+	// Generate HTML report
+	const { generateReport } = await import("./report");
+	const reportPath = path.join(evalDir, "evaluation-summary.html");
+	await generateReport(judgedResults, reportPath);
+	console.log(chalk.green(`✓ Generated HTML report: ${reportPath}`));
 
 	// Print summary statistics
 	console.log(chalk.bold.white("\n=== Summary Statistics ===\n"));
